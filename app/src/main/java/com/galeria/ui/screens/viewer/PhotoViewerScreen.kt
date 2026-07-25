@@ -7,6 +7,7 @@ import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -53,6 +54,7 @@ import com.galeria.ui.screens.info.PhotoInfoSheet
 import kotlin.math.max
 import kotlin.math.min
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PhotoViewerScreen(
     viewModel: GalleryViewModel,
@@ -184,6 +186,7 @@ fun PhotoViewerScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
     var scale by remember(uriStr) { mutableStateOf(1f) }

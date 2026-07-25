@@ -3,6 +3,7 @@ package com.galeria.ui.screens.editor
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,6 +59,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -252,7 +254,7 @@ fun EditorScreen(
 }
 
 private fun Modifier.offsetFraction(xFraction: Float, yFraction: Float): Modifier = this.then(
-    androidx.compose.ui.layout.layout { measurable, constraints ->
+    Modifier.layout { measurable, constraints ->
         val placeable = measurable.measure(constraints)
         layout(placeable.width, placeable.height) {
             placeable.place(
@@ -302,7 +304,7 @@ private fun ToolButton(icon: androidx.compose.ui.graphics.vector.ImageVector, la
 }
 
 private fun Modifier.clickableSimple(onClick: () -> Unit): Modifier =
-    this.then(androidx.compose.foundation.clickable(onClick = onClick))
+    this.then(Modifier.clickable(onClick = onClick))
 
 @Composable
 private fun CorPanel(
