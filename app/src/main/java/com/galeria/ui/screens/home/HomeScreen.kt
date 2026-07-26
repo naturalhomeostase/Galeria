@@ -1,11 +1,13 @@
 package com.galeria.ui.screens.home
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -24,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.components.MonthHeader
 import com.galeria.ui.components.PhotoGridItem
+import com.galeria.ui.components.SimpleVerticalScrollbar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,6 +40,7 @@ fun HomeScreen(
     val selected = remember { mutableStateOf(setOf<String>()) }
 
     val allUris = remember(groups) { groups.flatMap { g -> g.photos.map { it.uri.toString() } } }
+    val gridState = rememberLazyGridState()
 
     Scaffold(
         topBar = {
@@ -48,9 +52,14 @@ fun HomeScreen(
         if (groups.isEmpty()) {
             EmptyState(modifier = Modifier.padding(padding))
         } else {
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier
+                    .padding(padding)
+                    .fillMaxSize()
+            ) {
             LazyVerticalGrid(
+                state = gridState,
                 columns = GridCells.Fixed(3),
-                contentPadding = padding,
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 modifier = Modifier.padding(horizontal = 2.dp)
@@ -81,6 +90,8 @@ fun HomeScreen(
                         )
                     }
                 }
+            }
+            SimpleVerticalScrollbar(state = gridState)
             }
         }
     }

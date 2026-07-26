@@ -7,6 +7,8 @@ import androidx.room.RoomDatabase
 import com.galeria.data.model.AlbumEntity
 import com.galeria.data.model.AlbumPhotoCrossRef
 import com.galeria.data.model.FavoriteEntity
+import com.galeria.data.model.HiddenFolderEntity
+import com.galeria.data.model.SafFolderEntity
 import com.galeria.data.model.SecurityEntity
 
 @Database(
@@ -14,15 +16,19 @@ import com.galeria.data.model.SecurityEntity
         AlbumEntity::class,
         AlbumPhotoCrossRef::class,
         FavoriteEntity::class,
-        SecurityEntity::class
+        SecurityEntity::class,
+        HiddenFolderEntity::class,
+        SafFolderEntity::class
     ],
-    version = 1,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun albumDao(): AlbumDao
     abstract fun favoriteDao(): FavoriteDao
     abstract fun securityDao(): SecurityDao
+    abstract fun hiddenFolderDao(): HiddenFolderDao
+    abstract fun safFolderDao(): SafFolderDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -33,7 +39,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "galeria.db"
-                ).build().also { INSTANCE = it }
+                ).fallbackToDestructiveMigration().build().also { INSTANCE = it }
             }
         }
     }

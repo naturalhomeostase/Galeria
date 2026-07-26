@@ -22,11 +22,14 @@ import com.galeria.ui.components.GaleriaTab
 import com.galeria.ui.screens.albums.AddPhotosToAlbumScreen
 import com.galeria.ui.screens.albums.AlbumDetailScreen
 import com.galeria.ui.screens.albums.AlbumsScreen
+import com.galeria.ui.screens.albums.DeviceFolderDetailScreen
 import com.galeria.ui.screens.editor.EditorScreen
 import com.galeria.ui.screens.favorites.FavoritesScreen
 import com.galeria.ui.screens.home.HomeScreen
 import com.galeria.ui.screens.secret.SecretLockScreen
 import com.galeria.ui.screens.secret.SetupSecretScreen
+import com.galeria.ui.screens.settings.SettingsScreen
+import com.galeria.ui.screens.trash.TrashScreen
 import com.galeria.ui.screens.viewer.PhotoViewerScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -70,13 +73,25 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                 }
 
                 composable(GaleriaTab.ALBUNS.route) {
-                    AlbumsScreen(viewModel = viewModel) { albumId, isSecret ->
-                        if (isSecret) {
-                            navController.navigate("secretGate/$albumId")
-                        } else {
-                            navController.navigate("album/$albumId")
-                        }
-                    }
+                    AlbumsScreen(
+                        viewModel = viewModel,
+                        onOpenAlbum = { albumId, isSecret ->
+                            if (isSecret) {
+                                navController.navigate("secretGate/$albumId")
+                            } else {
+                                navController.navigate("album/$albumId")
+                            }
+                        },
+                        onOpenDeviceFolder = { name ->
+                            navController.navigate("folder/${encode(name)}")
+                        },
+                        onOpenTrash = { navController.navigate("trash") },
+                        onOpenSettings = { navController.navigate("settings") }
+                    )
+                }
+
+                composable("settings") {
+                    SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
                 }
 
                 composable(GaleriaTab.FAVORITOS.route) {
@@ -143,6 +158,26 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                     AddPhotosToAlbumScreen(viewModel = viewModel, albumId = albumId) {
                         navController.popBackStack()
                     }
+                }
+
+                composable(
+                    route = "folder/{name}",
+                    arguments = listOf(navArgument("name") { type = NavType.StringType })
+                ) { entry ->
+                    val name = decode(entry.arguments?.getString("name") ?: "")
+                    DeviceFolderDetailScreen(
+                        viewModel = viewModel,
+                        folderName = name,
+                        onBack = { navController.popBackStack() },
+                        onOpenPhoto = { uris, index ->
+                            viewerUris = uris
+                            navController.navigate("viewer/$index")
+                        }
+                    )
+                }
+
+                composable("trash") {
+                    TrashScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
                 }
 
                 composable(

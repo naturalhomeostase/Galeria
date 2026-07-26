@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
@@ -32,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.components.PhotoGridItem
+import com.galeria.ui.components.SimpleVerticalScrollbar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,57 +44,58 @@ fun AlbumDetailScreen(
     onOpenPhoto: (List<String>, Int) -> Unit,
     onAddPhotos: () -> Unit
 ) {
-    val albums by viewModel.albums.collectAsState()
-    val album = albums.firstOrNull { it.id == albumId }
+    val albumsWithStats by viewModel.albumsWithStats.collectAsState()
+    val stats = albumsWithStats.firstOrNull { it.album.id == albumId }
     val favorites by viewModel.favoriteUris.collectAsState()
     var menuOpen by remember { mutableStateOf(false) }
     var selectionMode by remember { mutableStateOf(false) }
     val selected = remember { mutableStateOf(setOf<String>()) }
+    val gridState = rememberLazyGridState()
 
-    AlbumUrisCollector(viewModel = viewModel, albumId = albumId) { uris ->
-        val photos = viewModel.resolvePhotos(uris)
+    val photos = remember(stats) { stats?.let { viewModel.resolvePhotos(it.photoUris) } ?: emptyList() }
 
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text(album?.name ?: "Álbum") },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções")
-                        }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Excluir álbum") },
-                                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
-                                onClick = {
-                                    menuOpen = false
-                                    viewModel.deleteAlbum(albumId)
-                                    onBack()
-                                }
-                            )
-                        }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stats?.album?.name ?: "Álbum") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
                     }
-                )
-            },
-            floatingActionButton = {
-                FloatingActionButton(onClick = onAddPhotos) {
-                    Icon(Icons.Filled.Add, contentDescription = "Adicionar fotos")
+                },
+                actions = {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções")
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Excluir álbum") },
+                            leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                            onClick = {
+                                menuOpen = false
+                                viewModel.deleteAlbum(albumId)
+                                onBack()
+                            }
+                        )
+                    }
                 }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = onAddPhotos) {
+                Icon(Icons.Filled.Add, contentDescription = "Adicionar fotos")
             }
-        ) { padding ->
-            if (photos.isEmpty()) {
-                Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Nenhuma foto neste álbum ainda.")
-                }
-            } else {
+        }
+    ) { padding ->
+        if (photos.isEmpty()) {
+            Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Nenhuma foto neste álbum ainda.")
+            }
+        } else {
+            Box(modifier = Modifier.padding(padding).fillMaxSize()) {
                 LazyVerticalGrid(
+                    state = gridState,
                     columns = GridCells.Fixed(3),
-                    contentPadding = padding,
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                     modifier = Modifier.padding(horizontal = 2.dp)
@@ -119,19 +122,8 @@ fun AlbumDetailScreen(
                         )
                     }
                 }
+                SimpleVerticalScrollbar(state = gridState)
             }
         }
     }
-}
-
-@Composable
-private fun AlbumUrisCollector(
-    viewModel: GalleryViewModel,
-    albumId: Long,
-    content: @Composable (List<String>) -> Unit
-) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val app = context.applicationContext as com.galeria.GaleriaApplication
-    val uris by app.albumRepository.getPhotoUris(albumId).collectAsState(initial = emptyList())
-    content(uris)
 }

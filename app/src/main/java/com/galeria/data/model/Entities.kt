@@ -9,7 +9,9 @@ data class AlbumEntity(
     val name: String,
     val isSecret: Boolean = false,
     val coverUri: String? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val lastModifiedAt: Long = System.currentTimeMillis(),
+    val isHidden: Boolean = false
 )
 
 @Entity(tableName = "album_photos", primaryKeys = ["albumId", "photoUri"])
@@ -31,4 +33,18 @@ data class SecurityEntity(
     val passwordHash: String? = null,
     val salt: String? = null,
     val biometricEnabled: Boolean = false
+)
+
+@Entity(tableName = "hidden_folders")
+data class HiddenFolderEntity(
+    @PrimaryKey val bucketName: String,
+    val hiddenAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "saf_folders")
+data class SafFolderEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val treeUri: String,
+    val displayName: String,
+    val addedAt: Long = System.currentTimeMillis()
 )

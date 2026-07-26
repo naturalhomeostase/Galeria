@@ -6,6 +6,7 @@ import com.galeria.data.repository.AlbumRepository
 import com.galeria.data.repository.FavoriteRepository
 import com.galeria.data.repository.MediaStoreRepository
 import com.galeria.data.repository.SecurityRepository
+import com.galeria.data.repository.SettingsRepository
 
 class GaleriaApplication : Application() {
 
@@ -17,6 +18,8 @@ class GaleriaApplication : Application() {
         private set
     lateinit var securityRepository: SecurityRepository
         private set
+    lateinit var settingsRepository: SettingsRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -25,5 +28,6 @@ class GaleriaApplication : Application() {
         albumRepository = AlbumRepository(db.albumDao())
         favoriteRepository = FavoriteRepository(db.favoriteDao())
         securityRepository = SecurityRepository(db.securityDao())
+        settingsRepository = SettingsRepository(db.hiddenFolderDao(), db.safFolderDao())
     }
 }

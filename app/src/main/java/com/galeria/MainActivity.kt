@@ -39,7 +39,13 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            GaleriaTheme {
+            val themeMode by viewModel.themeMode.collectAsState()
+            val darkTheme = when (themeMode) {
+                com.galeria.ui.ThemeMode.SISTEMA -> androidx.compose.foundation.isSystemInDarkTheme()
+                com.galeria.ui.ThemeMode.CLARO -> false
+                com.galeria.ui.ThemeMode.ESCURO -> true
+            }
+            GaleriaTheme(darkTheme = darkTheme) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     GaleriaRoot(viewModel = viewModel)
                 }

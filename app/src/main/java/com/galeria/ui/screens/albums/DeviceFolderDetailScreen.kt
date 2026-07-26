@@ -1,4 +1,4 @@
-package com.galeria.ui.screens.favorites
+package com.galeria.ui.screens.albums
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,10 +8,14 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -25,26 +29,35 @@ import com.galeria.ui.components.SimpleVerticalScrollbar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FavoritesScreen(
+fun DeviceFolderDetailScreen(
     viewModel: GalleryViewModel,
+    folderName: String,
+    onBack: () -> Unit,
     onOpenPhoto: (List<String>, Int) -> Unit
 ) {
-    val favorites by viewModel.favoriteUris.collectAsState()
     val allPhotos by viewModel.allPhotos.collectAsState()
-    val photos = remember(favorites, allPhotos) {
-        allPhotos.filter { favorites.contains(it.uri.toString()) }
-    }
+    val favorites by viewModel.favoriteUris.collectAsState()
     val gridState = rememberLazyGridState()
+    val photos = remember(allPhotos, folderName) { allPhotos.filter { it.bucketName == folderName } }
 
     Scaffold(
-        topBar = { CenterAlignedTopAppBar(title = { Text("Favoritos") }) }
+        topBar = {
+            TopAppBar(
+                title = { Text(folderName) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
+                    }
+                }
+            )
+        }
     ) { padding ->
-        if (photos.isEmpty()) {
-            Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Toque na estrela de uma foto para adicioná-la aqui.")
-            }
-        } else {
-            Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+            if (photos.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Nenhuma foto nesta pasta.")
+                }
+            } else {
                 LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Fixed(3),
@@ -56,7 +69,7 @@ fun FavoritesScreen(
                         val uriStr = photo.uri.toString()
                         PhotoGridItem(
                             photo = photo,
-                            isFavorite = true,
+                            isFavorite = favorites.contains(uriStr),
                             isSelected = false,
                             selectionMode = false,
                             onClick = {

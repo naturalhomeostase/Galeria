@@ -1,5 +1,6 @@
 package com.galeria.ui.screens.viewer
 
+import android.app.WallpaperManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -7,11 +8,10 @@ import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PhotoAlbum
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -54,7 +55,8 @@ import com.galeria.ui.screens.info.PhotoInfoSheet
 import kotlin.math.max
 import kotlin.math.min
 
-@OptIn(ExperimentalFoundationApi::class)
+private const val MAX_ZOOM = 4f
+
 @Composable
 fun PhotoViewerScreen(
     viewModel: GalleryViewModel,
@@ -78,7 +80,10 @@ fun PhotoViewerScreen(
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             val uriStr = uris.getOrNull(page) ?: return@HorizontalPager
-            ZoomableImage(uriStr = uriStr, onTap = { chromeVisible = !chromeVisible })
+            ZoomableImage(
+                uriStr = uriStr,
+                onTap = { chromeVisible = !chromeVisible }
+            )
         }
 
         if (chromeVisible) {
@@ -92,13 +97,6 @@ fun PhotoViewerScreen(
                 IconButton(onClick = onBack) {
                     Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar", tint = Color.White)
                 }
-                val currentUri = uris.getOrNull(pagerState.currentPage)
-                val photo = currentUri?.let { viewModel.getPhotoByUri(it) }
-                Text(
-                    photo?.displayName ?: "",
-                    color = Color.White,
-                    modifier = Modifier.padding(start = 4.dp)
-                )
             }
 
             Row(
@@ -124,6 +122,24 @@ fun PhotoViewerScreen(
                 }
                 IconButton(onClick = { currentUri?.let(onAddToAlbum) }) {
                     Icon(Icons.Filled.PhotoAlbum, contentDescription = "Adicionar a álbum", tint = Color.White)
+                }
+                IconButton(onClick = {
+                    currentUri?.let { uriString ->
+                        val wallpaperIntent = Intent(Intent.ACTION_ATTACH_DATA).apply {
+                            setDataAndType(Uri.parse(uriString), "image/*")
+                            putExtra("mimeType", "image/*")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        try {
+                            context.startActivity(Intent.createChooser(wallpaperIntent, "Usar como"))
+                        } catch (_: Exception) {
+                            val wm = WallpaperManager.getInstance(context)
+                            context.startActivity(wm.getCropAndSetWallpaperIntent(Uri.parse(uriString)))
+                        }
+                    }
+                }) {
+                    Icon(Icons.Filled.Wallpaper, contentDescription = "Usar como", tint = Color.White)
                 }
                 IconButton(onClick = {
                     currentUri?.let { uriString ->
@@ -166,13 +182,19 @@ fun PhotoViewerScreen(
                     showDeleteConfirm = false
                     currentUri?.let { uriString ->
                         val uri = Uri.parse(uriString)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        if (uri.authority == "media" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                             val pendingIntent = MediaStore.createDeleteRequest(context.contentResolver, listOf(uri))
                             deleteLauncher.launch(IntentSenderRequest.Builder(pendingIntent.intentSender).build())
-                        } else {
+                        } else if (uri.authority == "media") {
                             try {
                                 context.contentResolver.delete(uri, null, null)
                             } catch (_: SecurityException) {
+                            }
+                            onBack()
+                        } else {
+                            try {
+                                android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri)
+                            } catch (_: Exception) {
                             }
                             onBack()
                         }
@@ -186,34 +208,59 @@ fun PhotoViewerScreen(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
-    var scale by remember(uriStr) { mutableStateOf(1f) }
+    var targetScale by remember(uriStr) { mutableStateOf(1f) }
     var offsetX by remember(uriStr) { mutableStateOf(0f) }
     var offsetY by remember(uriStr) { mutableStateOf(0f) }
 
-    val state = rememberTransformableState { zoomChange, panChange, _ ->
-        scale = min(max(scale * zoomChange, 1f), 6f)
-        offsetX += panChange.x
-        offsetY += panChange.y
+    val scale by animateFloatAsState(targetValue = targetScale, animationSpec = tween(200), label = "zoomScale")
+
+    fun toggleZoom() {
+        if (targetScale > 1f) {
+            targetScale = 1f
+            offsetX = 0f
+            offsetY = 0f
+        } else {
+            targetScale = MAX_ZOOM
+        }
     }
 
-    AsyncImage(
-        model = Uri.parse(uriStr),
-        contentDescription = null,
-        contentScale = ContentScale.Fit,
-        modifier = Modifier
-            .fillMaxSize()
-            .graphicsLayer(
-                scaleX = scale,
-                scaleY = scale,
-                translationX = offsetX,
-                translationY = offsetY
+    Box(modifier = Modifier.fillMaxSize()) {
+        AsyncImage(
+            model = Uri.parse(uriStr),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offsetX,
+                    translationY = offsetY
+                )
+                .pointerInput(uriStr) {
+                    detectTapGestures(
+                        onTap = { onTap() },
+                        onDoubleTap = { toggleZoom() }
+                    )
+                }
+        )
+
+        if (targetScale > 1f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(uriStr, scale) {
+                        androidx.compose.foundation.gestures.detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            val maxOffsetX = (size.width * (scale - 1f)) / 2f
+                            val maxOffsetY = (size.height * (scale - 1f)) / 2f
+                            offsetX = (offsetX + dragAmount.x).coerceIn(-maxOffsetX, maxOffsetX)
+                            offsetY = (offsetY + dragAmount.y).coerceIn(-maxOffsetY, maxOffsetY)
+                        }
+                    }
             )
-            .transformable(state)
-            .pointerInput(uriStr) {
-                detectTapGestures(onTap = { onTap() })
-            }
-    )
+        }
+    }
 }

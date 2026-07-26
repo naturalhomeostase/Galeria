@@ -25,6 +25,15 @@ interface AlbumDao {
     @Query("DELETE FROM album_photos WHERE albumId = :albumId")
     suspend fun clearAlbumPhotos(albumId: Long)
 
+    @Query("SELECT * FROM album_photos")
+    fun getAllCrossRefs(): Flow<List<AlbumPhotoCrossRef>>
+
+    @Query("UPDATE albums SET lastModifiedAt = :timestamp WHERE id = :albumId")
+    suspend fun touchAlbum(albumId: Long, timestamp: Long)
+
+    @Query("UPDATE albums SET isHidden = :hidden WHERE id = :albumId")
+    suspend fun setHidden(albumId: Long, hidden: Boolean)
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun addPhotoToAlbum(ref: AlbumPhotoCrossRef)
 

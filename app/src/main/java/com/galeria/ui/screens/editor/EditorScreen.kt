@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -117,10 +118,16 @@ fun EditorScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     val ratio = bmp.width.toFloat() / bmp.height.toFloat()
+                    var containerWidthPx by remember { mutableStateOf(1f) }
+                    var containerHeightPx by remember { mutableStateOf(1f) }
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(ratio)
+                            .onGloballyPositioned {
+                                containerWidthPx = it.size.width.toFloat().coerceAtLeast(1f)
+                                containerHeightPx = it.size.height.toFloat().coerceAtLeast(1f)
+                            }
                     ) {
                         val colorMatrix = remember(state.brightness, state.contrast, state.saturation, state.filter) {
                             buildComposeColorMatrix(state.brightness, state.contrast, state.saturation, state.filter)
@@ -164,11 +171,11 @@ fun EditorScreen(
                                 modifier = Modifier
                                     .align(Alignment.TopStart)
                                     .offsetFraction(overlay.xFraction, overlay.yFraction)
-                                    .pointerInput(index) {
+                                    .pointerInput(index, containerWidthPx, containerHeightPx) {
                                         detectDragGestures { change, dragAmount ->
                                             change.consume()
-                                            val newX = (overlay.xFraction + dragAmount.x / size.width).coerceIn(0f, 1f)
-                                            val newY = (overlay.yFraction + dragAmount.y / size.height).coerceIn(0f, 1f)
+                                            val newX = (overlay.xFraction + dragAmount.x / containerWidthPx).coerceIn(0f, 1f)
+                                            val newY = (overlay.yFraction + dragAmount.y / containerHeightPx).coerceIn(0f, 1f)
                                             viewModel.updateTextPosition(index, newX, newY)
                                         }
                                     }
@@ -217,7 +224,7 @@ fun EditorScreen(
                     EditorTab.AJUSTAR -> AjustarPanel(
                         onRotate = { viewModel.rotate90() },
                         onFlip = { viewModel.flipHorizontal() },
-                        onCrop = { l, t, r, b -> viewModel.crop(l, t, r, b) }
+                        onCropRatio = { ratio -> viewModel.cropToAspectRatio(ratio) }
                     )
                     EditorTab.COR -> CorPanel(
                         brightness = state.brightness,
@@ -283,15 +290,16 @@ private fun buildComposeColorMatrix(brightness: Float, contrast: Float, saturati
 }
 
 @Composable
-private fun AjustarPanel(onRotate: () -> Unit, onFlip: () -> Unit, onCrop: (Float, Float, Float, Float) -> Unit) {
+private fun AjustarPanel(onRotate: () -> Unit, onFlip: () -> Unit, onCropRatio: (Float) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(12.dp),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
         ToolButton(icon = Icons.Filled.Rotate90DegreesCcw, label = "Girar", onClick = onRotate)
         ToolButton(icon = Icons.Filled.Flip, label = "Espelhar", onClick = onFlip)
-        ToolButton(icon = Icons.Filled.Crop, label = "1:1", onClick = { onCrop(0.1f, 0f, 0.9f, 0.8f) })
-        ToolButton(icon = Icons.Filled.Crop, label = "4:3", onClick = { onCrop(0.05f, 0.05f, 0.95f, 0.8f) })
+        ToolButton(icon = Icons.Filled.Crop, label = "1:1", onClick = { onCropRatio(1f) })
+        ToolButton(icon = Icons.Filled.Crop, label = "4:3", onClick = { onCropRatio(4f / 3f) })
+        ToolButton(icon = Icons.Filled.Crop, label = "16:9", onClick = { onCropRatio(16f / 9f) })
     }
 }
 

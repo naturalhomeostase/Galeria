@@ -59,6 +59,21 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _state.value = _state.value.copy(baseBitmap = ImageEditUtils.flipBitmap(bmp, true), strokes = emptyList(), textOverlays = emptyList())
     }
 
+    fun cropToAspectRatio(targetRatio: Float) {
+        val bmp = _state.value.baseBitmap ?: return
+        val currentRatio = bmp.width.toFloat() / bmp.height.toFloat()
+        val (left, top, right, bottom) = if (currentRatio > targetRatio) {
+            val newWidthFraction = targetRatio / currentRatio
+            val excess = (1f - newWidthFraction) / 2f
+            listOf(excess, 0f, 1f - excess, 1f)
+        } else {
+            val newHeightFraction = currentRatio / targetRatio
+            val excess = (1f - newHeightFraction) / 2f
+            listOf(0f, excess, 1f, 1f - excess)
+        }
+        crop(left, top, right, bottom)
+    }
+
     fun crop(leftPct: Float, topPct: Float, rightPct: Float, bottomPct: Float) {
         val bmp = _state.value.baseBitmap ?: return
         _state.value = _state.value.copy(

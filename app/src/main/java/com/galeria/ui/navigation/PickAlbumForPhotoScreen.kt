@@ -33,7 +33,7 @@ fun PickAlbumForPhotoScreen(
     photoUri: String,
     onDone: () -> Unit
 ) {
-    val albums by viewModel.albums.collectAsState()
+    val albumsWithStats by viewModel.albumsWithStats.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -56,12 +56,12 @@ fun PickAlbumForPhotoScreen(
                     modifier = Modifier.clickable { showCreateDialog = true }
                 )
             }
-            items(albums, key = { it.id }) { album ->
+            items(albumsWithStats, key = { it.album.id }) { stats ->
                 ListItem(
-                    headlineContent = { Text(album.name) },
+                    headlineContent = { Text(stats.album.name) },
                     leadingContent = { Icon(Icons.Filled.PhotoAlbum, contentDescription = null) },
                     modifier = Modifier.clickable {
-                        viewModel.addPhotoToAlbum(album.id, photoUri)
+                        viewModel.addPhotoToAlbum(stats.album.id, photoUri)
                         onDone()
                     }
                 )
