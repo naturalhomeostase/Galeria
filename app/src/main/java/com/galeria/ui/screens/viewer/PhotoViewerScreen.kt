@@ -10,7 +10,9 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -57,6 +59,7 @@ import kotlin.math.min
 
 private const val MAX_ZOOM = 4f
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PhotoViewerScreen(
     viewModel: GalleryViewModel,
@@ -252,7 +255,7 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
                 modifier = Modifier
                     .fillMaxSize()
                     .pointerInput(uriStr, scale) {
-                        androidx.compose.foundation.gestures.detectDragGestures { change, dragAmount ->
+                        detectDragGestures { change, dragAmount ->
                             change.consume()
                             val maxOffsetX = (size.width * (scale - 1f)) / 2f
                             val maxOffsetY = (size.height * (scale - 1f)) / 2f
