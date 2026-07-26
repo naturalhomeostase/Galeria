@@ -85,13 +85,16 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                         onOpenDeviceFolder = { name ->
                             navController.navigate("folder/${encode(name)}")
                         },
-                        onOpenTrash = { navController.navigate("trash") },
                         onOpenSettings = { navController.navigate("settings") }
                     )
                 }
 
                 composable("settings") {
-                    SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+                    SettingsScreen(
+                        viewModel = viewModel,
+                        onBack = { navController.popBackStack() },
+                        onOpenTrash = { navController.navigate("trash") }
+                    )
                 }
 
                 composable(GaleriaTab.FAVORITOS.route) {

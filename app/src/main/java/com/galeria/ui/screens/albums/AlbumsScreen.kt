@@ -2,6 +2,7 @@ package com.galeria.ui.screens.albums
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,7 +64,6 @@ fun AlbumsScreen(
     viewModel: GalleryViewModel,
     onOpenAlbum: (Long, Boolean) -> Unit,
     onOpenDeviceFolder: (String) -> Unit,
-    onOpenTrash: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
@@ -92,9 +92,6 @@ fun AlbumsScreen(
             CenterAlignedTopAppBar(
                 title = { Text("Álbuns") },
                 actions = {
-                    IconButton(onClick = onOpenTrash) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Lixeira")
-                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "Configurações")
                     }
@@ -240,6 +237,7 @@ private fun AlbumCard(
                 .fillMaxWidth()
                 .aspectRatio(1f)
                 .clip(RoundedCornerShape(16.dp))
+                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
         ) {
             if (coverUri != null) {
                 AsyncImage(

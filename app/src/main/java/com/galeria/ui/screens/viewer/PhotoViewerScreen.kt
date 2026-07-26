@@ -218,6 +218,7 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
     var offsetY by remember(uriStr) { mutableStateOf(0f) }
 
     val scale by animateFloatAsState(targetValue = targetScale, animationSpec = tween(200), label = "zoomScale")
+    val isZoomed = targetScale > 1f
 
     fun toggleZoom() {
         if (targetScale > 1f) {
@@ -248,22 +249,21 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
                         onDoubleTap = { toggleZoom() }
                     )
                 }
-        )
-
-        if (targetScale > 1f) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(uriStr, scale) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            val maxOffsetX = (size.width * (scale - 1f)) / 2f
-                            val maxOffsetY = (size.height * (scale - 1f)) / 2f
-                            offsetX = (offsetX + dragAmount.x).coerceIn(-maxOffsetX, maxOffsetX)
-                            offsetY = (offsetY + dragAmount.y).coerceIn(-maxOffsetY, maxOffsetY)
+                .then(
+                    if (isZoomed) {
+                        Modifier.pointerInput(uriStr, scale) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                val maxOffsetX = (size.width * (scale - 1f)) / 2f
+                                val maxOffsetY = (size.height * (scale - 1f)) / 2f
+                                offsetX = (offsetX + dragAmount.x).coerceIn(-maxOffsetX, maxOffsetX)
+                                offsetY = (offsetY + dragAmount.y).coerceIn(-maxOffsetY, maxOffsetY)
+                            }
                         }
+                    } else {
+                        Modifier
                     }
-            )
-        }
+                )
+        )
     }
 }

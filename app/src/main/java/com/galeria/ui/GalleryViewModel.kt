@@ -67,6 +67,9 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private val _allPhotos = MutableStateFlow<List<Photo>>(emptyList())
     val allPhotos: StateFlow<List<Photo>> = _allPhotos
 
+    private val _isLoadingPhotos = MutableStateFlow(false)
+    val isLoadingPhotos: StateFlow<Boolean> = _isLoadingPhotos
+
     private val _hasPermission = MutableStateFlow(false)
     val hasPermission: StateFlow<Boolean> = _hasPermission
 
@@ -165,12 +168,14 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     fun loadPhotos() {
         viewModelScope.launch {
+            _isLoadingPhotos.value = true
             val mediaPhotos = app.mediaStoreRepository.getAllPhotos()
             val currentSafFolders = app.settingsRepository.getSafFolders().first()
             val safPhotos = currentSafFolders.flatMap { folder ->
                 SafUtils.loadImagesFromTree(getApplication(), Uri.parse(folder.treeUri), folder.displayName)
             }
             _allPhotos.value = mediaPhotos + safPhotos
+            _isLoadingPhotos.value = false
             loadTrash()
         }
     }

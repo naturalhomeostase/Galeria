@@ -3,6 +3,7 @@ package com.galeria.ui.screens.settings
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,7 +43,8 @@ import com.galeria.ui.ThemeMode
 @Composable
 fun SettingsScreen(
     viewModel: GalleryViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenTrash: () -> Unit
 ) {
     val context = LocalContext.current
     val showHidden by viewModel.showHiddenAlbums.collectAsState()
@@ -76,6 +78,15 @@ fun SettingsScreen(
         }
     ) { padding ->
         LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
+            item {
+                ListItem(
+                    headlineContent = { Text("Lixeira") },
+                    supportingContent = { Text("Fotos excluídas recentemente") },
+                    leadingContent = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                    modifier = Modifier.clickable { onOpenTrash() }
+                )
+                Divider()
+            }
             item {
                 Text(
                     "Tema",
