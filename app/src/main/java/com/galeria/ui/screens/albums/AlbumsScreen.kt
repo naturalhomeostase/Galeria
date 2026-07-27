@@ -154,13 +154,6 @@ fun AlbumsScreen(
                         }
                     }
                     if (normalFolders.isNotEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            Text(
-                                "Pastas do aparelho",
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
-                            )
-                        }
                         items(normalFolders, key = { "folder_${it.name}" }) { folder ->
                             AlbumCard(
                                 title = folder.name,
@@ -290,7 +283,7 @@ private fun AlbumCard(
             text = title,
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
-            modifier = Modifier.padding(top = 6.dp)
+            modifier = Modifier.padding(top = 8.dp, bottom = 3.dp)
         )
         Text(
             text = "$count ${if (count == 1) "foto" else "fotos"} · ${FileUtils.formatSize(totalSizeBytes)}",

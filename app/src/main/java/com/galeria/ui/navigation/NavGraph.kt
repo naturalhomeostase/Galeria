@@ -54,7 +54,7 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
             if (showBottomBar) {
                 GaleriaBottomBar(currentRoute = currentRoute) { tab ->
                     navController.navigate(tab.route) {
-                        popUpTo(GaleriaTab.FOTOS.route) { saveState = true }
+                        popUpTo(GaleriaTab.ALBUNS.route) { saveState = true }
                         launchSingleTop = true
                         restoreState = true
                     }
@@ -63,7 +63,7 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
         }
     ) { padding ->
         Column(modifier = androidx.compose.ui.Modifier.padding(padding)) {
-            NavHost(navController = navController, startDestination = GaleriaTab.FOTOS.route) {
+            NavHost(navController = navController, startDestination = GaleriaTab.ALBUNS.route) {
 
                 composable(GaleriaTab.FOTOS.route) {
                     HomeScreen(viewModel = viewModel) { uris, index ->
