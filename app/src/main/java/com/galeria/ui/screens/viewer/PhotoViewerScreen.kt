@@ -38,6 +38,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +53,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.screens.info.PhotoInfoSheet
@@ -76,6 +82,10 @@ fun PhotoViewerScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var chromeVisible by remember { mutableStateOf(true) }
 
+    val currentUri = uris.getOrNull(pagerState.currentPage)
+    val currentPhoto = currentUri?.let { viewModel.getPhotoByUri(it) }
+    val isCurrentVideo = currentPhoto?.isVideo == true
+
     val deleteLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { onBack() }
@@ -83,17 +93,22 @@ fun PhotoViewerScreen(
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             val uriStr = uris.getOrNull(page) ?: return@HorizontalPager
-            ZoomableImage(
-                uriStr = uriStr,
-                onTap = { chromeVisible = !chromeVisible }
-            )
+            val photo = viewModel.getPhotoByUri(uriStr)
+            if (photo?.isVideo == true) {
+                VideoPage(uriStr = uriStr, isCurrentPage = page == pagerState.currentPage)
+            } else {
+                ZoomableImage(
+                    uriStr = uriStr,
+                    onTap = { chromeVisible = !chromeVisible }
+                )
+            }
         }
 
         if (chromeVisible) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.4f))
+                    .background(Color.Black.copy(alpha = 0.35f))
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -106,11 +121,10 @@ fun PhotoViewerScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.4f))
+                    .background(Color.Black.copy(alpha = 0.35f))
                     .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                val currentUri = uris.getOrNull(pagerState.currentPage)
                 val isFav = currentUri != null && favorites.contains(currentUri)
 
                 IconButton(onClick = { currentUri?.let { viewModel.toggleFavorite(it) } }) {
@@ -120,34 +134,38 @@ fun PhotoViewerScreen(
                         tint = if (isFav) Color(0xFFFFC107) else Color.White
                     )
                 }
-                IconButton(onClick = { currentUri?.let(onEdit) }) {
-                    Icon(Icons.Filled.Edit, contentDescription = "Editar", tint = Color.White)
+                if (!isCurrentVideo) {
+                    IconButton(onClick = { currentUri?.let(onEdit) }) {
+                        Icon(Icons.Filled.Edit, contentDescription = "Editar", tint = Color.White)
+                    }
                 }
                 IconButton(onClick = { currentUri?.let(onAddToAlbum) }) {
                     Icon(Icons.Filled.PhotoAlbum, contentDescription = "Adicionar a álbum", tint = Color.White)
                 }
-                IconButton(onClick = {
-                    currentUri?.let { uriString ->
-                        val wallpaperIntent = Intent(Intent.ACTION_ATTACH_DATA).apply {
-                            setDataAndType(Uri.parse(uriString), "image/*")
-                            putExtra("mimeType", "image/*")
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (!isCurrentVideo) {
+                    IconButton(onClick = {
+                        currentUri?.let { uriString ->
+                            val wallpaperIntent = Intent(Intent.ACTION_ATTACH_DATA).apply {
+                                setDataAndType(Uri.parse(uriString), "image/*")
+                                putExtra("mimeType", "image/*")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            try {
+                                context.startActivity(Intent.createChooser(wallpaperIntent, "Usar como"))
+                            } catch (_: Exception) {
+                                val wm = WallpaperManager.getInstance(context)
+                                context.startActivity(wm.getCropAndSetWallpaperIntent(Uri.parse(uriString)))
+                            }
                         }
-                        try {
-                            context.startActivity(Intent.createChooser(wallpaperIntent, "Usar como"))
-                        } catch (_: Exception) {
-                            val wm = WallpaperManager.getInstance(context)
-                            context.startActivity(wm.getCropAndSetWallpaperIntent(Uri.parse(uriString)))
-                        }
+                    }) {
+                        Icon(Icons.Filled.Wallpaper, contentDescription = "Usar como", tint = Color.White)
                     }
-                }) {
-                    Icon(Icons.Filled.Wallpaper, contentDescription = "Usar como", tint = Color.White)
                 }
                 IconButton(onClick = {
                     currentUri?.let { uriString ->
                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "image/*"
+                            type = if (isCurrentVideo) "video/*" else "image/*"
                             putExtra(Intent.EXTRA_STREAM, Uri.parse(uriString))
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
@@ -167,7 +185,6 @@ fun PhotoViewerScreen(
     }
 
     if (showInfo) {
-        val currentUri = uris.getOrNull(pagerState.currentPage)
         val photo = currentUri?.let { viewModel.getPhotoByUri(it) }
         if (photo != null) {
             PhotoInfoSheet(photo = photo, onDismiss = { showInfo = false })
@@ -175,11 +192,10 @@ fun PhotoViewerScreen(
     }
 
     if (showDeleteConfirm) {
-        val currentUri = uris.getOrNull(pagerState.currentPage)
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Excluir foto") },
-            text = { Text("Esta foto será movida para a lixeira do sistema. Deseja continuar?") },
+            title = { Text(if (isCurrentVideo) "Excluir vídeo" else "Excluir foto") },
+            text = { Text("Este item será movido para a lixeira do sistema. Deseja continuar?") },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirm = false
@@ -209,6 +225,38 @@ fun PhotoViewerScreen(
             }
         )
     }
+}
+
+@Composable
+private fun VideoPage(uriStr: String, isCurrentPage: Boolean) {
+    val context = LocalContext.current
+    val exoPlayer = remember(uriStr) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(Uri.parse(uriStr)))
+            repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+            prepare()
+        }
+    }
+
+    DisposableEffect(uriStr) {
+        onDispose { exoPlayer.release() }
+    }
+
+    LaunchedEffect(isCurrentPage) {
+        if (isCurrentPage) exoPlayer.play() else exoPlayer.pause()
+    }
+
+    AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { ctx ->
+            PlayerView(ctx).apply {
+                player = exoPlayer
+                useController = true
+                setShowNextButton(false)
+                setShowPreviousButton(false)
+            }
+        }
+    )
 }
 
 @Composable

@@ -68,6 +68,10 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("io.coil-kt:coil-video:2.6.0")
+
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-ui:1.3.1")
 
     implementation("androidx.fragment:fragment-ktx:1.8.2")
     implementation("androidx.biometric:biometric:1.1.0")

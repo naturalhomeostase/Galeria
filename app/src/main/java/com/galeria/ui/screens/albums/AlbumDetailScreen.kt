@@ -2,15 +2,18 @@ package com.galeria.ui.screens.albums
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
@@ -30,10 +33,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.galeria.ui.GalleryViewModel
+import com.galeria.ui.components.AlbumPickerDialog
+import com.galeria.ui.components.MonthHeader
 import com.galeria.ui.components.PhotoGridItem
+import com.galeria.ui.components.SelectionActionBar
 import com.galeria.ui.components.SimpleVerticalScrollbar
+import com.galeria.ui.groupPhotosByMonthUtil
+import com.galeria.util.rememberBulkDeleteAction
+import com.galeria.util.shareMultiplePhotos
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,6 +54,7 @@ fun AlbumDetailScreen(
     onOpenPhoto: (List<String>, Int) -> Unit,
     onAddPhotos: () -> Unit
 ) {
+    val context = LocalContext.current
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
     val stats = albumsWithStats.firstOrNull { it.album.id == albumId }
     val favorites by viewModel.favoriteUris.collectAsState()
@@ -51,79 +62,185 @@ fun AlbumDetailScreen(
     var selectionMode by remember { mutableStateOf(false) }
     val selected = remember { mutableStateOf(setOf<String>()) }
     val gridState = rememberLazyGridState()
+    var showCopyDialog by remember { mutableStateOf(false) }
+    var showMoveDialog by remember { mutableStateOf(false) }
+    var showCreateForCopy by remember { mutableStateOf(false) }
+    var showCreateForMove by remember { mutableStateOf(false) }
 
     val photos = remember(stats) { stats?.let { viewModel.resolvePhotos(it.photoUris) } ?: emptyList() }
+    val monthGroups = remember(photos) { groupPhotosByMonthUtil(photos) }
+    val allUris = remember(photos) { photos.map { it.uri.toString() } }
+
+    fun exitSelection() {
+        selectionMode = false
+        selected.value = emptySet()
+    }
+
+    val bulkDelete = rememberBulkDeleteAction(onCompleted = { exitSelection() })
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stats?.album?.name ?: "Álbum") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { if (selectionMode) exitSelection() else onBack() }) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
                     }
                 },
                 actions = {
-                    IconButton(onClick = { menuOpen = true }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções")
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Excluir álbum") },
-                            leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
-                            onClick = {
-                                menuOpen = false
-                                viewModel.deleteAlbum(albumId)
-                                onBack()
-                            }
-                        )
+                    if (!selectionMode) {
+                        IconButton(onClick = { selectionMode = true }) {
+                            Icon(Icons.Filled.Checklist, contentDescription = "Selecionar")
+                        }
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Excluir álbum") },
+                                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                                onClick = {
+                                    menuOpen = false
+                                    viewModel.deleteAlbum(albumId)
+                                    onBack()
+                                }
+                            )
+                        }
                     }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAddPhotos) {
-                Icon(Icons.Filled.Add, contentDescription = "Adicionar fotos")
+            if (!selectionMode) {
+                FloatingActionButton(onClick = onAddPhotos) {
+                    Icon(Icons.Filled.Add, contentDescription = "Adicionar fotos")
+                }
             }
         }
     ) { padding ->
-        if (photos.isEmpty()) {
-            Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Nenhuma foto neste álbum ainda.")
-            }
-        } else {
-            Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-                LazyVerticalGrid(
-                    state = gridState,
-                    columns = GridCells.Fixed(3),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                    modifier = Modifier.padding(horizontal = 2.dp)
-                ) {
-                    items(photos, key = { it.id }) { photo ->
-                        val uriStr = photo.uri.toString()
-                        PhotoGridItem(
-                            photo = photo,
-                            isFavorite = favorites.contains(uriStr),
-                            isSelected = selected.value.contains(uriStr),
-                            selectionMode = selectionMode,
-                            onClick = {
-                                if (selectionMode) {
-                                    selected.value = if (selected.value.contains(uriStr)) selected.value - uriStr else selected.value + uriStr
-                                } else {
-                                    val idx = photos.indexOf(photo)
-                                    onOpenPhoto(photos.map { it.uri.toString() }, idx)
-                                }
-                            },
-                            onLongClick = {
-                                selectionMode = true
-                                selected.value = setOf(uriStr)
-                            }
-                        )
+        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+            Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+                if (photos.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Nenhuma foto neste álbum ainda.")
                     }
+                } else {
+                    LazyVerticalGrid(
+                        state = gridState,
+                        columns = GridCells.Fixed(3),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier.padding(horizontal = 2.dp)
+                    ) {
+                        monthGroups.forEach { group ->
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                MonthHeader(group.label, group.photos.size)
+                            }
+                            items(group.photos, key = { it.id }) { photo ->
+                                val uriStr = photo.uri.toString()
+                                PhotoGridItem(
+                                    photo = photo,
+                                    isFavorite = favorites.contains(uriStr),
+                                    isSelected = selected.value.contains(uriStr),
+                                    selectionMode = selectionMode,
+                                    onClick = {
+                                        if (selectionMode) {
+                                            selected.value = if (selected.value.contains(uriStr)) selected.value - uriStr else selected.value + uriStr
+                                        } else {
+                                            val idx = allUris.indexOf(uriStr)
+                                            onOpenPhoto(allUris, idx)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        selectionMode = true
+                                        selected.value = selected.value + uriStr
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    SimpleVerticalScrollbar(state = gridState)
                 }
-                SimpleVerticalScrollbar(state = gridState)
+            }
+
+            if (selectionMode && selected.value.isNotEmpty()) {
+                SelectionActionBar(
+                    selectedCount = selected.value.size,
+                    onClearSelection = { exitSelection() },
+                    onFavorite = {
+                        viewModel.setFavorites(selected.value, true)
+                        exitSelection()
+                    },
+                    onShare = {
+                        shareMultiplePhotos(context, selected.value.toList())
+                    },
+                    onDelete = { bulkDelete(selected.value.toList()) },
+                    onCopyToAlbum = { showCopyDialog = true },
+                    onMoveToAlbum = { showMoveDialog = true }
+                )
             }
         }
+    }
+
+    if (showCopyDialog) {
+        AlbumPickerDialog(
+            title = "Copiar para álbum",
+            albums = albumsWithStats.map { it.album }.filter { it.id != albumId },
+            onDismiss = { showCopyDialog = false },
+            onPick = { album ->
+                viewModel.addPhotosToAlbum(album.id, selected.value)
+                showCopyDialog = false
+                exitSelection()
+            },
+            onCreateNew = {
+                showCopyDialog = false
+                showCreateForCopy = true
+            }
+        )
+    }
+
+    if (showMoveDialog) {
+        AlbumPickerDialog(
+            title = "Mover para álbum",
+            albums = albumsWithStats.map { it.album }.filter { it.id != albumId },
+            onDismiss = { showMoveDialog = false },
+            onPick = { album ->
+                viewModel.addPhotosToAlbum(album.id, selected.value)
+                viewModel.removePhotosFromAlbum(albumId, selected.value)
+                showMoveDialog = false
+                exitSelection()
+            },
+            onCreateNew = {
+                showMoveDialog = false
+                showCreateForMove = true
+            }
+        )
+    }
+
+    if (showCreateForCopy) {
+        CreateAlbumDialog(
+            onDismiss = { showCreateForCopy = false },
+            onConfirm = { name, isSecret ->
+                showCreateForCopy = false
+                viewModel.createAlbum(name, isSecret) { newId ->
+                    viewModel.addPhotosToAlbum(newId, selected.value)
+                    exitSelection()
+                }
+            }
+        )
+    }
+
+    if (showCreateForMove) {
+        CreateAlbumDialog(
+            onDismiss = { showCreateForMove = false },
+            onConfirm = { name, isSecret ->
+                showCreateForMove = false
+                viewModel.createAlbum(name, isSecret) { newId ->
+                    viewModel.addPhotosToAlbum(newId, selected.value)
+                    viewModel.removePhotosFromAlbum(albumId, selected.value)
+                    exitSelection()
+                }
+            }
+        )
     }
 }

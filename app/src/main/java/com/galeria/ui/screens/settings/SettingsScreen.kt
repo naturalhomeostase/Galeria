@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOff
+import androidx.compose.material.icons.filled.PhotoSizeSelectLarge
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,7 +45,8 @@ import com.galeria.ui.ThemeMode
 fun SettingsScreen(
     viewModel: GalleryViewModel,
     onBack: () -> Unit,
-    onOpenTrash: () -> Unit
+    onOpenTrash: () -> Unit,
+    onOpenLargeFiles: () -> Unit
 ) {
     val context = LocalContext.current
     val showHidden by viewModel.showHiddenAlbums.collectAsState()
@@ -84,6 +86,12 @@ fun SettingsScreen(
                     supportingContent = { Text("Fotos excluídas recentemente") },
                     leadingContent = { Icon(Icons.Filled.Delete, contentDescription = null) },
                     modifier = Modifier.clickable { onOpenTrash() }
+                )
+                ListItem(
+                    headlineContent = { Text("Arquivos grandes") },
+                    supportingContent = { Text("Encontre fotos que ocupam mais espaço") },
+                    leadingContent = { Icon(Icons.Filled.PhotoSizeSelectLarge, contentDescription = null) },
+                    modifier = Modifier.clickable { onOpenLargeFiles() }
                 )
                 Divider()
             }

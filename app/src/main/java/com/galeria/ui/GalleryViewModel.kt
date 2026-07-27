@@ -93,6 +93,20 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         prefs.edit().putString("theme_mode", mode.name).apply()
     }
 
+    private val _albumSortOption = MutableStateFlow(
+        try {
+            AlbumSortOption.valueOf(prefs.getString("album_sort_option", AlbumSortOption.RECENTE.name) ?: AlbumSortOption.RECENTE.name)
+        } catch (_: IllegalArgumentException) {
+            AlbumSortOption.RECENTE
+        }
+    )
+    val albumSortOption: StateFlow<AlbumSortOption> = _albumSortOption
+
+    fun setAlbumSortOption(option: AlbumSortOption) {
+        _albumSortOption.value = option
+        prefs.edit().putString("album_sort_option", option.name).apply()
+    }
+
     val favoriteUris: StateFlow<Set<String>> = app.favoriteRepository.getFavoriteUris()
         .map { it.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
@@ -153,13 +167,8 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private fun groupPhotosByMonth(photos: List<Photo>): List<MonthGroup> {
-        return photos.groupBy { DateUtils.monthYearKey(it.dateTakenMillis) }
-            .map { (key, list) ->
-                MonthGroup(key, DateUtils.monthYearLabel(list.first().dateTakenMillis), list)
-            }
-            .sortedByDescending { it.photos.first().dateTakenMillis }
-    }
+    private fun groupPhotosByMonth(photos: List<Photo>): List<MonthGroup> =
+        groupPhotosByMonthUtil(photos)
 
     fun onPermissionGranted() {
         _hasPermission.value = true
@@ -197,6 +206,24 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     fun toggleFavorite(photoUri: String) {
         viewModelScope.launch {
             app.favoriteRepository.toggle(photoUri)
+        }
+    }
+
+    fun setFavorites(uris: Collection<String>, value: Boolean) {
+        viewModelScope.launch {
+            uris.forEach { app.favoriteRepository.setFavorite(it, value) }
+        }
+    }
+
+    fun addPhotosToAlbum(albumId: Long, uris: Collection<String>) {
+        viewModelScope.launch {
+            uris.forEach { app.albumRepository.addPhoto(albumId, it) }
+        }
+    }
+
+    fun removePhotosFromAlbum(albumId: Long, uris: Collection<String>) {
+        viewModelScope.launch {
+            uris.forEach { app.albumRepository.removePhoto(albumId, it) }
         }
     }
 
@@ -268,6 +295,14 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     suspend fun setBiometricEnabled(enabled: Boolean) =
         app.securityRepository.setBiometricEnabled(enabled)
+}
+
+fun groupPhotosByMonthUtil(photos: List<Photo>): List<MonthGroup> {
+    return photos.groupBy { DateUtils.monthYearKey(it.dateTakenMillis) }
+        .map { (key, list) ->
+            MonthGroup(key, DateUtils.monthYearLabel(list.first().dateTakenMillis), list)
+        }
+        .sortedByDescending { it.photos.first().dateTakenMillis }
 }
 
 fun sortAlbums(list: List<AlbumWithStats>, option: AlbumSortOption): List<AlbumWithStats> =

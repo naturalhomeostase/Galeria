@@ -54,11 +54,11 @@ class MainActivity : FragmentActivity() {
     }
 }
 
-private fun requiredImagePermission(): String =
+private fun requiredMediaPermissions(): Array<String> =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        Manifest.permission.READ_MEDIA_IMAGES
+        arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
     } else {
-        Manifest.permission.READ_EXTERNAL_STORAGE
+        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
     }
 
 @Composable
@@ -67,26 +67,27 @@ private fun GaleriaRoot(viewModel: GalleryViewModel) {
     val hasPermission by viewModel.hasPermission.collectAsState()
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) viewModel.onPermissionGranted()
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        if (results.values.any { it }) viewModel.onPermissionGranted()
     }
 
     LaunchedEffect(Unit) {
-        val permission = requiredImagePermission()
-        val alreadyGranted = ContextCompat.checkSelfPermission(context, permission) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
+        val permissions = requiredMediaPermissions()
+        val alreadyGranted = permissions.any {
+            ContextCompat.checkSelfPermission(context, it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
         if (alreadyGranted) {
             viewModel.onPermissionGranted()
         } else {
-            permissionLauncher.launch(permission)
+            permissionLauncher.launch(permissions)
         }
     }
 
     if (hasPermission) {
         GaleriaNavGraph(viewModel = viewModel)
     } else {
-        PermissionRequestScreen { permissionLauncher.launch(requiredImagePermission()) }
+        PermissionRequestScreen { permissionLauncher.launch(requiredMediaPermissions()) }
     }
 }
 
@@ -99,7 +100,7 @@ private fun PermissionRequestScreen(onRequest: () -> Unit) {
     ) {
         Icon(Icons.Filled.PhotoLibrary, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Text(
-            "Precisamos de acesso às suas fotos para exibir a galeria.",
+            "Precisamos de acesso às suas fotos e vídeos para exibir a galeria.",
             modifier = Modifier.padding(vertical = 16.dp)
         )
         Button(onClick = onRequest) { Text("Permitir acesso") }

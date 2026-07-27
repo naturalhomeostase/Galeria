@@ -69,8 +69,8 @@ fun AlbumsScreen(
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
     val deviceFolders by viewModel.deviceFolders.collectAsState()
     val showHidden by viewModel.showHiddenAlbums.collectAsState()
+    val sortOption by viewModel.albumSortOption.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
-    var sortOption by remember { mutableStateOf(AlbumSortOption.RECENTE) }
     var sortMenuOpen by remember { mutableStateOf(false) }
     val gridState = rememberLazyGridState()
 
@@ -85,6 +85,10 @@ fun AlbumsScreen(
     }
     val systemHiddenFolders = remember(deviceFolders, sortOption) {
         sortDeviceFolders(deviceFolders.filter { it.isSystemHidden }, sortOption)
+    }
+
+    androidx.compose.runtime.LaunchedEffect(sortOption) {
+        gridState.scrollToItem(0)
     }
 
     Scaffold(
@@ -103,7 +107,7 @@ fun AlbumsScreen(
                             DropdownMenuItem(
                                 text = { Text(option.label) },
                                 onClick = {
-                                    sortOption = option
+                                    viewModel.setAlbumSortOption(option)
                                     sortMenuOpen = false
                                 }
                             )

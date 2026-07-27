@@ -15,5 +15,9 @@ class FavoriteRepository(private val dao: FavoriteDao) {
         }
     }
 
+    suspend fun setFavorite(photoUri: String, value: Boolean) {
+        if (value) dao.add(FavoriteEntity(photoUri)) else dao.remove(photoUri)
+    }
+
     suspend fun isFavorite(photoUri: String): Boolean = dao.isFavorite(photoUri)
 }

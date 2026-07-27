@@ -26,6 +26,7 @@ import com.galeria.ui.screens.albums.DeviceFolderDetailScreen
 import com.galeria.ui.screens.editor.EditorScreen
 import com.galeria.ui.screens.favorites.FavoritesScreen
 import com.galeria.ui.screens.home.HomeScreen
+import com.galeria.ui.screens.largefiles.LargeFilesScreen
 import com.galeria.ui.screens.secret.SecretLockScreen
 import com.galeria.ui.screens.secret.SetupSecretScreen
 import com.galeria.ui.screens.settings.SettingsScreen
@@ -93,7 +94,19 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                     SettingsScreen(
                         viewModel = viewModel,
                         onBack = { navController.popBackStack() },
-                        onOpenTrash = { navController.navigate("trash") }
+                        onOpenTrash = { navController.navigate("trash") },
+                        onOpenLargeFiles = { navController.navigate("largeFiles") }
+                    )
+                }
+
+                composable("largeFiles") {
+                    LargeFilesScreen(
+                        viewModel = viewModel,
+                        onBack = { navController.popBackStack() },
+                        onOpenPhoto = { uris, index ->
+                            viewerUris = uris
+                            navController.navigate("viewer/$index")
+                        }
                     )
                 }
 

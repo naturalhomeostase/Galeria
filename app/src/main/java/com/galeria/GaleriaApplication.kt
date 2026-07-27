@@ -1,6 +1,9 @@
 package com.galeria
 
 import android.app.Application
+import coil.Coil
+import coil.ImageLoader
+import coil.decode.VideoFrameDecoder
 import com.galeria.data.db.AppDatabase
 import com.galeria.data.repository.AlbumRepository
 import com.galeria.data.repository.FavoriteRepository
@@ -29,5 +32,10 @@ class GaleriaApplication : Application() {
         favoriteRepository = FavoriteRepository(db.favoriteDao())
         securityRepository = SecurityRepository(db.securityDao())
         settingsRepository = SettingsRepository(db.hiddenFolderDao(), db.safFolderDao())
+
+        val imageLoader = ImageLoader.Builder(this)
+            .components { add(VideoFrameDecoder.Factory()) }
+            .build()
+        Coil.setImageLoader(imageLoader)
     }
 }

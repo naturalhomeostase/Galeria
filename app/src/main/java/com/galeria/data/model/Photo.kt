@@ -13,5 +13,7 @@ data class Photo(
     val sizeBytes: Long,
     val mimeType: String,
     val bucketName: String,
-    val path: String
+    val path: String,
+    val isVideo: Boolean = false,
+    val durationMs: Long = 0L
 )
