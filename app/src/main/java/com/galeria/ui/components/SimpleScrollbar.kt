@@ -1,6 +1,7 @@
 package com.galeria.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -29,6 +30,7 @@ import kotlinx.coroutines.delay
 /**
  * Barra de rolagem simples para LazyVerticalGrid, exibida do lado direito
  * enquanto o usuário rola a lista, desaparecendo após um curto período de inatividade.
+ * A posição da barra é suavizada para não "saltar" a cada item.
  */
 @Composable
 fun BoxScope.SimpleVerticalScrollbar(state: LazyGridState, modifier: Modifier = Modifier) {
@@ -50,14 +52,20 @@ fun BoxScope.SimpleVerticalScrollbar(state: LazyGridState, modifier: Modifier = 
 
     val alpha by animateFloatAsState(
         targetValue = if (isScrolling && totalItems > 0) 0.9f else 0f,
+        animationSpec = tween(180),
         label = "scrollbarAlpha"
     )
 
     if (totalItems <= 0) return
 
-    val firstVisible = layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: 0
+    val firstVisibleItemInfo = layoutInfo.visibleItemsInfo.firstOrNull()
+    val estimatedItemHeight = firstVisibleItemInfo?.size?.height?.takeIf { it > 0 } ?: 1
+    val subItemFraction = firstVisibleItemInfo
+        ?.let { (-it.offset.y.toFloat() / estimatedItemHeight.toFloat()).coerceIn(0f, 1f) }
+        ?: 0f
+    val firstVisible = (firstVisibleItemInfo?.index ?: 0).toFloat() + subItemFraction
     val visibleCount = layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
-    val progress = (firstVisible.toFloat() / totalItems.toFloat()).coerceIn(0f, 1f)
+    val progress = (firstVisible / totalItems.toFloat()).coerceIn(0f, 1f)
     val thumbFraction = (visibleCount.toFloat() / totalItems.toFloat()).coerceIn(0.06f, 1f)
 
     Box(
@@ -68,13 +76,18 @@ fun BoxScope.SimpleVerticalScrollbar(state: LazyGridState, modifier: Modifier = 
             .onGloballyPositioned { trackHeightPx = it.size.height.toFloat() }
     ) {
         val thumbHeightPx = trackHeightPx * thumbFraction
-        val offsetPx = (trackHeightPx - thumbHeightPx) * progress
+        val rawOffsetPx = (trackHeightPx - thumbHeightPx) * progress
+        val animatedOffsetPx by animateFloatAsState(
+            targetValue = rawOffsetPx,
+            animationSpec = tween(durationMillis = 80),
+            label = "scrollbarOffset"
+        )
         val thumbHeightDp = with(density) { thumbHeightPx.toDp() }
 
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .graphicsLayer { translationY = offsetPx }
+                .graphicsLayer { translationY = animatedOffsetPx }
                 .width(4.dp)
                 .height(thumbHeightDp)
                 .clip(RoundedCornerShape(4.dp))

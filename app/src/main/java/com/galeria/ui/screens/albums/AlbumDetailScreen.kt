@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -13,12 +14,13 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,12 +38,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.galeria.ui.GalleryViewModel
+import com.galeria.ui.PhotoSortOption
 import com.galeria.ui.components.AlbumPickerDialog
 import com.galeria.ui.components.MonthHeader
 import com.galeria.ui.components.PhotoGridItem
 import com.galeria.ui.components.SelectionActionBar
 import com.galeria.ui.components.SimpleVerticalScrollbar
 import com.galeria.ui.groupPhotosByMonthUtil
+import com.galeria.ui.sortPhotos
 import com.galeria.util.rememberBulkDeleteAction
 import com.galeria.util.shareMultiplePhotos
 
@@ -58,7 +62,9 @@ fun AlbumDetailScreen(
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
     val stats = albumsWithStats.firstOrNull { it.album.id == albumId }
     val favorites by viewModel.favoriteUris.collectAsState()
+    val sortOption by viewModel.photoSortOption.collectAsState()
     var menuOpen by remember { mutableStateOf(false) }
+    var sortMenuOpen by remember { mutableStateOf(false) }
     var selectionMode by remember { mutableStateOf(false) }
     val selected = remember { mutableStateOf(setOf<String>()) }
     val gridState = rememberLazyGridState()
@@ -68,8 +74,16 @@ fun AlbumDetailScreen(
     var showCreateForMove by remember { mutableStateOf(false) }
 
     val photos = remember(stats) { stats?.let { viewModel.resolvePhotos(it.photoUris) } ?: emptyList() }
-    val monthGroups = remember(photos) { groupPhotosByMonthUtil(photos) }
-    val allUris = remember(photos) { photos.map { it.uri.toString() } }
+    val isDateSort = sortOption == PhotoSortOption.RECENTE || sortOption == PhotoSortOption.ANTIGA
+    val monthGroups = remember(photos, sortOption) {
+        if (isDateSort) groupPhotosByMonthUtil(photos, descending = sortOption == PhotoSortOption.RECENTE) else emptyList()
+    }
+    val flatPhotos = remember(photos, sortOption) {
+        if (!isDateSort) sortPhotos(photos, sortOption) else emptyList()
+    }
+    val allUris = remember(photos, sortOption) {
+        if (isDateSort) monthGroups.flatMap { g -> g.photos.map { it.uri.toString() } } else flatPhotos.map { it.uri.toString() }
+    }
 
     fun exitSelection() {
         selectionMode = false
@@ -89,8 +103,19 @@ fun AlbumDetailScreen(
                 },
                 actions = {
                     if (!selectionMode) {
-                        IconButton(onClick = { selectionMode = true }) {
-                            Icon(Icons.Filled.Checklist, contentDescription = "Selecionar")
+                        FilledTonalIconButton(onClick = { sortMenuOpen = true }, modifier = Modifier.size(38.dp)) {
+                            Icon(Icons.Filled.Sort, contentDescription = "Ordenar por")
+                        }
+                        DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
+                            PhotoSortOption.entries.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option.label) },
+                                    onClick = {
+                                        viewModel.setPhotoSortOption(option)
+                                        sortMenuOpen = false
+                                    }
+                                )
+                            }
                         }
                         IconButton(onClick = { menuOpen = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções")
@@ -132,11 +157,35 @@ fun AlbumDetailScreen(
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                         modifier = Modifier.padding(horizontal = 2.dp)
                     ) {
-                        monthGroups.forEach { group ->
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                MonthHeader(group.label, group.photos.size)
+                        if (isDateSort) {
+                            monthGroups.forEach { group ->
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    MonthHeader(group.label, group.photos.size)
+                                }
+                                items(group.photos, key = { it.id }) { photo ->
+                                    val uriStr = photo.uri.toString()
+                                    PhotoGridItem(
+                                        photo = photo,
+                                        isFavorite = favorites.contains(uriStr),
+                                        isSelected = selected.value.contains(uriStr),
+                                        selectionMode = selectionMode,
+                                        onClick = {
+                                            if (selectionMode) {
+                                                selected.value = if (selected.value.contains(uriStr)) selected.value - uriStr else selected.value + uriStr
+                                            } else {
+                                                val idx = allUris.indexOf(uriStr)
+                                                onOpenPhoto(allUris, idx)
+                                            }
+                                        },
+                                        onLongClick = {
+                                            selectionMode = true
+                                            selected.value = selected.value + uriStr
+                                        }
+                                    )
+                                }
                             }
-                            items(group.photos, key = { it.id }) { photo ->
+                        } else {
+                            items(flatPhotos, key = { it.id }) { photo ->
                                 val uriStr = photo.uri.toString()
                                 PhotoGridItem(
                                     photo = photo,

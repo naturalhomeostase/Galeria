@@ -1,5 +1,6 @@
 package com.galeria.ui.screens.viewer
 
+import android.app.Activity
 import android.app.WallpaperManager
 import android.content.Intent
 import android.net.Uri
@@ -20,14 +21,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoAlbum
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Wallpaper
@@ -35,6 +40,9 @@ import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,21 +55,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.screens.info.PhotoInfoSheet
+import kotlinx.coroutines.delay
 import kotlin.math.max
-import kotlin.math.min
 
 private const val MAX_ZOOM = 4f
 
@@ -76,11 +90,24 @@ fun PhotoViewerScreen(
     onAddToAlbum: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val favorites by viewModel.favoriteUris.collectAsState()
     val pagerState = rememberPagerState(initialPage = startIndex.coerceIn(0, max(uris.size - 1, 0))) { uris.size }
     var showInfo by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var chromeVisible by remember { mutableStateOf(true) }
+
+    // Modo imersivo: some com a barra de status/navegação enquanto o visualizador está aberto
+    DisposableEffect(Unit) {
+        val activity = context as? Activity
+        val window = activity?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller?.hide(WindowInsetsCompat.Type.systemBars())
+        onDispose {
+            controller?.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
 
     val currentUri = uris.getOrNull(pagerState.currentPage)
     val currentPhoto = currentUri?.let { viewModel.getPhotoByUri(it) }
@@ -95,7 +122,12 @@ fun PhotoViewerScreen(
             val uriStr = uris.getOrNull(page) ?: return@HorizontalPager
             val photo = viewModel.getPhotoByUri(uriStr)
             if (photo?.isVideo == true) {
-                VideoPage(uriStr = uriStr, isCurrentPage = page == pagerState.currentPage)
+                VideoPage(
+                    uriStr = uriStr,
+                    isCurrentPage = page == pagerState.currentPage,
+                    chromeVisible = chromeVisible,
+                    onTap = { chromeVisible = !chromeVisible }
+                )
             } else {
                 ZoomableImage(
                     uriStr = uriStr,
@@ -228,35 +260,114 @@ fun PhotoViewerScreen(
 }
 
 @Composable
-private fun VideoPage(uriStr: String, isCurrentPage: Boolean) {
+private fun VideoPage(
+    uriStr: String,
+    isCurrentPage: Boolean,
+    chromeVisible: Boolean,
+    onTap: () -> Unit
+) {
     val context = LocalContext.current
     val exoPlayer = remember(uriStr) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(Uri.parse(uriStr)))
-            repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+            repeatMode = Player.REPEAT_MODE_ONE
             prepare()
         }
     }
 
+    var isPlaying by remember(uriStr) { mutableStateOf(true) }
+    var positionMs by remember(uriStr) { mutableStateOf(0L) }
+    var durationMs by remember(uriStr) { mutableStateOf(0L) }
+    var isSeeking by remember(uriStr) { mutableStateOf(false) }
+
     DisposableEffect(uriStr) {
-        onDispose { exoPlayer.release() }
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+            }
+        }
+        exoPlayer.addListener(listener)
+        onDispose {
+            exoPlayer.removeListener(listener)
+            exoPlayer.release()
+        }
     }
 
     LaunchedEffect(isCurrentPage) {
         if (isCurrentPage) exoPlayer.play() else exoPlayer.pause()
     }
 
-    AndroidView(
-        modifier = Modifier.fillMaxSize(),
-        factory = { ctx ->
-            PlayerView(ctx).apply {
-                player = exoPlayer
-                useController = true
-                setShowNextButton(false)
-                setShowPreviousButton(false)
+    LaunchedEffect(uriStr) {
+        while (true) {
+            if (!isSeeking) {
+                positionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
+                durationMs = exoPlayer.duration.coerceAtLeast(0L)
+            }
+            delay(300)
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(uriStr) {
+                detectTapGestures(onTap = { onTap() })
+            }
+    ) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    player = exoPlayer
+                    useController = false
+                }
+            }
+        )
+
+        if (chromeVisible) {
+            IconButton(
+                onClick = {
+                    if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                },
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.35f))
+            ) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (isPlaying) "Pausar" else "Reproduzir",
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+
+            if (durationMs > 0) {
+                Slider(
+                    value = positionMs.toFloat(),
+                    onValueChange = {
+                        isSeeking = true
+                        positionMs = it.toLong()
+                    },
+                    onValueChangeFinished = {
+                        exoPlayer.seekTo(positionMs)
+                        isSeeking = false
+                    },
+                    valueRange = 0f..durationMs.toFloat(),
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color.White,
+                        activeTrackColor = Color.White,
+                        inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                    ),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 72.dp)
+                )
             }
         }
-    )
+    }
 }
 
 @Composable

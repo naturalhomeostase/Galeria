@@ -38,7 +38,7 @@ class MediaStoreRepository(private val context: Context) {
     )
 
     suspend fun getAllPhotos(): List<Photo> = withContext(Dispatchers.IO) {
-        queryImages() + queryVideos()
+        (queryImages() + queryVideos()).sortedByDescending { it.dateTakenMillis }
     }
 
     private fun queryImages(): List<Photo> {

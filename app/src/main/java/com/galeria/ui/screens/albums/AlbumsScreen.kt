@@ -32,6 +32,7 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -99,7 +100,10 @@ fun AlbumsScreen(
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "Configurações")
                     }
-                    IconButton(onClick = { sortMenuOpen = true }) {
+                    FilledTonalIconButton(
+                        onClick = { sortMenuOpen = true },
+                        modifier = Modifier.size(38.dp)
+                    ) {
                         Icon(Icons.Filled.Sort, contentDescription = "Ordenar por")
                     }
                     DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {

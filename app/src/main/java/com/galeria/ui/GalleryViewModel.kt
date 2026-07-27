@@ -58,6 +58,13 @@ enum class ThemeMode(val label: String) {
     ESCURO("Escuro")
 }
 
+enum class PhotoSortOption(val label: String) {
+    RECENTE("Mais recentes primeiro"),
+    ANTIGA("Mais antigas primeiro"),
+    MAIOR_TAMANHO("Maior tamanho primeiro"),
+    MENOR_TAMANHO("Menor tamanho primeiro")
+}
+
 class GalleryViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as GaleriaApplication
@@ -105,6 +112,20 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     fun setAlbumSortOption(option: AlbumSortOption) {
         _albumSortOption.value = option
         prefs.edit().putString("album_sort_option", option.name).apply()
+    }
+
+    private val _photoSortOption = MutableStateFlow(
+        try {
+            PhotoSortOption.valueOf(prefs.getString("photo_sort_option", PhotoSortOption.RECENTE.name) ?: PhotoSortOption.RECENTE.name)
+        } catch (_: IllegalArgumentException) {
+            PhotoSortOption.RECENTE
+        }
+    )
+    val photoSortOption: StateFlow<PhotoSortOption> = _photoSortOption
+
+    fun setPhotoSortOption(option: PhotoSortOption) {
+        _photoSortOption.value = option
+        prefs.edit().putString("photo_sort_option", option.name).apply()
     }
 
     val favoriteUris: StateFlow<Set<String>> = app.favoriteRepository.getFavoriteUris()
@@ -297,12 +318,17 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         app.securityRepository.setBiometricEnabled(enabled)
 }
 
-fun groupPhotosByMonthUtil(photos: List<Photo>): List<MonthGroup> {
-    return photos.groupBy { DateUtils.monthYearKey(it.dateTakenMillis) }
+fun groupPhotosByMonthUtil(photos: List<Photo>, descending: Boolean = true): List<MonthGroup> {
+    val groups = photos.groupBy { DateUtils.monthYearKey(it.dateTakenMillis) }
         .map { (key, list) ->
-            MonthGroup(key, DateUtils.monthYearLabel(list.first().dateTakenMillis), list)
+            val sortedList = if (descending) list.sortedByDescending { it.dateTakenMillis } else list.sortedBy { it.dateTakenMillis }
+            MonthGroup(key, DateUtils.monthYearLabel(sortedList.first().dateTakenMillis), sortedList)
         }
-        .sortedByDescending { it.photos.first().dateTakenMillis }
+    return if (descending) {
+        groups.sortedByDescending { it.photos.first().dateTakenMillis }
+    } else {
+        groups.sortedBy { it.photos.first().dateTakenMillis }
+    }
 }
 
 fun sortAlbums(list: List<AlbumWithStats>, option: AlbumSortOption): List<AlbumWithStats> =
@@ -321,4 +347,12 @@ fun sortDeviceFolders(list: List<DeviceFolder>, option: AlbumSortOption): List<D
         AlbumSortOption.NOME_ZA -> list.sortedByDescending { it.name.lowercase() }
         AlbumSortOption.DATA_MODIFICACAO -> list.sortedByDescending { it.lastModifiedAt }
         AlbumSortOption.TAMANHO -> list.sortedByDescending { it.totalSizeBytes }
+    }
+
+fun sortPhotos(list: List<Photo>, option: PhotoSortOption): List<Photo> =
+    when (option) {
+        PhotoSortOption.RECENTE -> list.sortedByDescending { it.dateTakenMillis }
+        PhotoSortOption.ANTIGA -> list.sortedBy { it.dateTakenMillis }
+        PhotoSortOption.MAIOR_TAMANHO -> list.sortedByDescending { it.sizeBytes }
+        PhotoSortOption.MENOR_TAMANHO -> list.sortedBy { it.sizeBytes }
     }
