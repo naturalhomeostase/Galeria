@@ -9,7 +9,7 @@ import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -473,9 +473,13 @@ private const val ZOOM_SNAP_BACK_THRESHOLD = 1.05f
  */
 @Composable
 private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
-    val scale = remember(uriStr) { Animatable(1f) }
-    val offsetX = remember(uriStr) { Animatable(0f) }
-    val offsetY = remember(uriStr) { Animatable(0f) }
+    // Estado simples (não Animatable): dentro do bloco de gesto abaixo (awaitEachGesture) o
+    // Kotlin só permite chamar funções suspensas do próprio escopo restrito do ponteiro — por
+    // isso Animatable.snapTo não pode ser chamado ali dentro. Atribuição direta de var, porém,
+    // não é uma chamada suspensa e funciona normalmente durante o arraste/pinça em tempo real.
+    var scale by remember(uriStr) { mutableStateOf(1f) }
+    var offsetX by remember(uriStr) { mutableStateOf(0f) }
+    var offsetY by remember(uriStr) { mutableStateOf(0f) }
     val scope = rememberCoroutineScope()
 
     fun maxOffsets(boxSize: IntSize, s: Float): Pair<Float, Float> {
@@ -484,15 +488,26 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
         return maxX to maxY
     }
 
-    fun toggleZoom() {
+    // Anima suavemente até um alvo (usado no double-tap e ao soltar a pinça perto de 1x).
+    // Roda fora do escopo restrito do gesto, então pode usar a função `animate` livremente.
+    fun animateTo(targetScale: Float, targetOffsetX: Float, targetOffsetY: Float) {
+        val startScale = scale
+        val startX = offsetX
+        val startY = offsetY
         scope.launch {
-            if (scale.value > 1f) {
-                launch { scale.animateTo(1f, tween(200)) }
-                launch { offsetX.animateTo(0f, tween(200)) }
-                launch { offsetY.animateTo(0f, tween(200)) }
-            } else {
-                scale.animateTo(MAX_ZOOM, tween(200))
+            animate(0f, 1f, animationSpec = tween(200)) { fraction, _ ->
+                scale = startScale + (targetScale - startScale) * fraction
+                offsetX = startX + (targetOffsetX - startX) * fraction
+                offsetY = startY + (targetOffsetY - startY) * fraction
             }
+        }
+    }
+
+    fun toggleZoom() {
+        if (scale > 1f) {
+            animateTo(1f, 0f, 0f)
+        } else {
+            animateTo(MAX_ZOOM, offsetX, offsetY)
         }
     }
 
@@ -504,10 +519,10 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer(
-                    scaleX = scale.value,
-                    scaleY = scale.value,
-                    translationX = offsetX.value,
-                    translationY = offsetY.value
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offsetX,
+                    translationY = offsetY
                 )
                 .pointerInput(uriStr) {
                     detectTapGestures(
@@ -524,30 +539,22 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
                             val zoomChange = event.calculateZoom()
                             val panChange = event.calculatePan()
                             val pointerCount = event.changes.count { it.pressed }
-                            val shouldCapture = pointerCount > 1 || scale.value > 1f
+                            val shouldCapture = pointerCount > 1 || scale > 1f
 
                             if (shouldCapture && (zoomChange != 1f || panChange != Offset.Zero)) {
                                 pinchOrPanStarted = true
-                                val newScale = (scale.value * zoomChange).coerceIn(1f, MAX_ZOOM)
+                                val newScale = (scale * zoomChange).coerceIn(1f, MAX_ZOOM)
                                 val (maxX, maxY) = maxOffsets(size, newScale)
-                                // Já estamos num contexto suspenso (awaitEachGesture), então dá pra
-                                // chamar snapTo direto, em sequência, sem abrir novas coroutines por
-                                // evento — isso evita corrida entre atualizações concorrentes do
-                                // mesmo Animatable durante um arraste rápido.
-                                scale.snapTo(newScale)
-                                offsetX.snapTo((offsetX.value + panChange.x).coerceIn(-maxX, maxX))
-                                offsetY.snapTo((offsetY.value + panChange.y).coerceIn(-maxY, maxY))
+                                scale = newScale
+                                offsetX = (offsetX + panChange.x).coerceIn(-maxX, maxX)
+                                offsetY = (offsetY + panChange.y).coerceIn(-maxY, maxY)
                                 event.changes.forEach { if (it.positionChanged()) it.consume() }
                             }
                         } while (event.changes.any { it.pressed })
 
                         // Se soltar perto de 1x (pinça quase fechada), volta suavemente ao normal.
-                        if (pinchOrPanStarted && scale.value < ZOOM_SNAP_BACK_THRESHOLD) {
-                            scope.launch {
-                                launch { scale.animateTo(1f, tween(200)) }
-                                launch { offsetX.animateTo(0f, tween(200)) }
-                                launch { offsetY.animateTo(0f, tween(200)) }
-                            }
+                        if (pinchOrPanStarted && scale < ZOOM_SNAP_BACK_THRESHOLD) {
+                            animateTo(1f, 0f, 0f)
                         }
                     }
                 }
