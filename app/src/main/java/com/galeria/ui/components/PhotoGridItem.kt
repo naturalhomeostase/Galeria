@@ -40,7 +40,8 @@ fun PhotoGridItem(
     selectionMode: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    sizeLabel: String? = null
 ) {
     Box(
         modifier = modifier
@@ -68,17 +69,32 @@ fun PhotoGridItem(
                     .align(Alignment.Center)
                     .size(28.dp)
             )
+        }
+        // Legenda inferior: duração (se vídeo) e/ou tamanho do arquivo (quando informado,
+        // ex.: na tela de Arquivos grandes, onde o tamanho é a informação mais importante).
+        val captionParts = buildList {
+            if (photo.isVideo) add(DateUtils.formatDuration(photo.durationMs))
+            if (sizeLabel != null) add(sizeLabel)
+        }
+        if (captionParts.isNotEmpty()) {
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(4.dp),
+                    .fillMaxWidth()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f))
+                        )
+                    )
+                    .padding(horizontal = 4.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = DateUtils.formatDuration(photo.durationMs),
+                    text = captionParts.joinToString(" · "),
                     color = Color.White,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1
                 )
             }
         }

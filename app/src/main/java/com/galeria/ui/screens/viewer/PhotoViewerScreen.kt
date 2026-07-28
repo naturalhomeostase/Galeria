@@ -9,10 +9,15 @@ import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -54,16 +59,20 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
@@ -77,6 +86,7 @@ import coil.compose.AsyncImage
 import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.screens.info.PhotoInfoSheet
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.max
 
 private const val MAX_ZOOM = 4f
@@ -447,22 +457,42 @@ private fun MinimalVideoSlider(
     }
 }
 
+private const val ZOOM_SNAP_BACK_THRESHOLD = 1.05f
+
+/**
+ * Visualizador de imagem com zoom por pinça (pinch-to-zoom) e arraste em qualquer direção
+ * quando ampliado, no estilo de apps de galeria como o Google Fotos.
+ *
+ * Implementado com um gesto customizado (em vez do `detectTransformGestures` pronto do
+ * Compose) porque essa tela fica dentro de um HorizontalPager: se a imagem consumisse
+ * qualquer arraste de um dedo só, mesmo sem estar ampliada, o gesto de trocar de foto
+ * (swipe) pararia de funcionar. Por isso, a lógica só "captura" o gesto quando:
+ *   - há 2 dedos na tela (pinça, para começar a ampliar a partir de 1x); ou
+ *   - a imagem já está ampliada (scale > 1x), permitindo arrastar com 1 dedo.
+ * Fora isso, o toque passa direto para o pager, preservando o swipe entre fotos.
+ */
 @Composable
 private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
-    var targetScale by remember(uriStr) { mutableStateOf(1f) }
-    var offsetX by remember(uriStr) { mutableStateOf(0f) }
-    var offsetY by remember(uriStr) { mutableStateOf(0f) }
+    val scale = remember(uriStr) { Animatable(1f) }
+    val offsetX = remember(uriStr) { Animatable(0f) }
+    val offsetY = remember(uriStr) { Animatable(0f) }
+    val scope = rememberCoroutineScope()
 
-    val scale by animateFloatAsState(targetValue = targetScale, animationSpec = tween(200), label = "zoomScale")
-    val isZoomed = targetScale > 1f
+    fun maxOffsets(boxSize: IntSize, s: Float): Pair<Float, Float> {
+        val maxX = (boxSize.width * (s - 1f) / 2f).coerceAtLeast(0f)
+        val maxY = (boxSize.height * (s - 1f) / 2f).coerceAtLeast(0f)
+        return maxX to maxY
+    }
 
     fun toggleZoom() {
-        if (targetScale > 1f) {
-            targetScale = 1f
-            offsetX = 0f
-            offsetY = 0f
-        } else {
-            targetScale = MAX_ZOOM
+        scope.launch {
+            if (scale.value > 1f) {
+                launch { scale.animateTo(1f, tween(200)) }
+                launch { offsetX.animateTo(0f, tween(200)) }
+                launch { offsetY.animateTo(0f, tween(200)) }
+            } else {
+                scale.animateTo(MAX_ZOOM, tween(200))
+            }
         }
     }
 
@@ -474,10 +504,10 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offsetX,
-                    translationY = offsetY
+                    scaleX = scale.value,
+                    scaleY = scale.value,
+                    translationX = offsetX.value,
+                    translationY = offsetY.value
                 )
                 .pointerInput(uriStr) {
                     detectTapGestures(
@@ -485,21 +515,42 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
                         onDoubleTap = { toggleZoom() }
                     )
                 }
-                .then(
-                    if (isZoomed) {
-                        Modifier.pointerInput(uriStr, scale) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                val maxOffsetX = (size.width * (scale - 1f)) / 2f
-                                val maxOffsetY = (size.height * (scale - 1f)) / 2f
-                                offsetX = (offsetX + dragAmount.x).coerceIn(-maxOffsetX, maxOffsetX)
-                                offsetY = (offsetY + dragAmount.y).coerceIn(-maxOffsetY, maxOffsetY)
+                .pointerInput(uriStr) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        var pinchOrPanStarted = false
+                        do {
+                            val event = awaitPointerEvent()
+                            val zoomChange = event.calculateZoom()
+                            val panChange = event.calculatePan()
+                            val pointerCount = event.changes.count { it.pressed }
+                            val shouldCapture = pointerCount > 1 || scale.value > 1f
+
+                            if (shouldCapture && (zoomChange != 1f || panChange != Offset.Zero)) {
+                                pinchOrPanStarted = true
+                                val newScale = (scale.value * zoomChange).coerceIn(1f, MAX_ZOOM)
+                                val (maxX, maxY) = maxOffsets(size, newScale)
+                                // Já estamos num contexto suspenso (awaitEachGesture), então dá pra
+                                // chamar snapTo direto, em sequência, sem abrir novas coroutines por
+                                // evento — isso evita corrida entre atualizações concorrentes do
+                                // mesmo Animatable durante um arraste rápido.
+                                scale.snapTo(newScale)
+                                offsetX.snapTo((offsetX.value + panChange.x).coerceIn(-maxX, maxX))
+                                offsetY.snapTo((offsetY.value + panChange.y).coerceIn(-maxY, maxY))
+                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            }
+                        } while (event.changes.any { it.pressed })
+
+                        // Se soltar perto de 1x (pinça quase fechada), volta suavemente ao normal.
+                        if (pinchOrPanStarted && scale.value < ZOOM_SNAP_BACK_THRESHOLD) {
+                            scope.launch {
+                                launch { scale.animateTo(1f, tween(200)) }
+                                launch { offsetX.animateTo(0f, tween(200)) }
+                                launch { offsetY.animateTo(0f, tween(200)) }
                             }
                         }
-                    } else {
-                        Modifier
                     }
-                )
+                }
         )
     }
 }

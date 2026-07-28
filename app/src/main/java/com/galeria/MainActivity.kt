@@ -66,6 +66,15 @@ private fun GaleriaRoot(viewModel: GalleryViewModel) {
     val context = LocalContext.current
     val hasPermission by viewModel.hasPermission.collectAsState()
 
+    // Verificação síncrona já na primeira composição (não dentro de um LaunchedEffect,
+    // que só roda depois do primeiro frame desenhado). É isso que evitava o "flash" da
+    // tela de permissão ao reabrir o app quando o acesso já havia sido concedido antes.
+    val initiallyGranted = remember {
+        requiredMediaPermissions().any {
+            ContextCompat.checkSelfPermission(context, it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
@@ -73,18 +82,14 @@ private fun GaleriaRoot(viewModel: GalleryViewModel) {
     }
 
     LaunchedEffect(Unit) {
-        val permissions = requiredMediaPermissions()
-        val alreadyGranted = permissions.any {
-            ContextCompat.checkSelfPermission(context, it) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        }
-        if (alreadyGranted) {
+        if (initiallyGranted) {
             viewModel.onPermissionGranted()
         } else {
-            permissionLauncher.launch(permissions)
+            permissionLauncher.launch(requiredMediaPermissions())
         }
     }
 
-    if (hasPermission) {
+    if (hasPermission || initiallyGranted) {
         GaleriaNavGraph(viewModel = viewModel)
     } else {
         PermissionRequestScreen { permissionLauncher.launch(requiredMediaPermissions()) }

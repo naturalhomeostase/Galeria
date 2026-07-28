@@ -65,14 +65,6 @@ import com.galeria.ui.sortAlbums
 import com.galeria.ui.sortDeviceFolders
 import com.galeria.util.FileUtils
 
-/** Representa um item selecionável (álbum real ou pasta do dispositivo) na grade. */
-private data class SelectableAlbum(
-    val key: String,
-    val albumId: Long?,
-    val folderName: String?,
-    val isHidden: Boolean
-)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumsScreen(
@@ -90,17 +82,24 @@ fun AlbumsScreen(
     val gridState = rememberLazyGridState()
 
     var selectionMode by remember { mutableStateOf(false) }
-    var selectedKeys by remember { mutableStateOf(setOf<String>()) }
+    var selectedAlbumIds by remember { mutableStateOf(setOf<Long>()) }
+    var selectedFolderNames by remember { mutableStateOf(setOf<String>()) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     fun exitSelection() {
         selectionMode = false
-        selectedKeys = emptySet()
+        selectedAlbumIds = emptySet()
+        selectedFolderNames = emptySet()
     }
 
-    fun toggleSelection(key: String) {
-        selectedKeys = if (selectedKeys.contains(key)) selectedKeys - key else selectedKeys + key
-        if (selectedKeys.isEmpty()) selectionMode = false
+    fun toggleAlbumSelection(id: Long) {
+        selectedAlbumIds = if (selectedAlbumIds.contains(id)) selectedAlbumIds - id else selectedAlbumIds + id
+        if (selectedAlbumIds.isEmpty() && selectedFolderNames.isEmpty()) selectionMode = false
+    }
+
+    fun toggleFolderSelection(name: String) {
+        selectedFolderNames = if (selectedFolderNames.contains(name)) selectedFolderNames - name else selectedFolderNames + name
+        if (selectedAlbumIds.isEmpty() && selectedFolderNames.isEmpty()) selectionMode = false
     }
 
     val visibleAlbums = remember(albumsWithStats, showHidden, sortOption) {
@@ -115,21 +114,16 @@ fun AlbumsScreen(
     val systemHiddenFolders = remember(deviceFolders, sortOption) {
         sortDeviceFolders(deviceFolders.filter { it.isSystemHidden }, sortOption)
     }
-    val selectableByKey = remember(visibleAlbums, normalFolders) {
-        val map = mutableMapOf<String, SelectableAlbum>()
-        visibleAlbums.forEach {
-            val key = "album_${it.album.id}"
-            map[key] = SelectableAlbum(key, it.album.id, null, it.isHidden)
-        }
-        normalFolders.forEach {
-            val key = "folder_${it.name}"
-            map[key] = SelectableAlbum(key, null, it.name, it.isHidden)
-        }
-        map
-    }
-    val selectedEntries = selectedKeys.mapNotNull { selectableByKey[it] }
-    val canDeleteSelection = selectedEntries.isNotEmpty() && selectedEntries.all { it.albumId != null }
-    val allSelectedHidden = selectedEntries.isNotEmpty() && selectedEntries.all { it.isHidden }
+
+    // Status de oculto dos itens selecionados calculado direto sobre a lista completa
+    // (não a filtrada por showHidden), para não perder o item da seleção quando ele é
+    // ocultado e desaparece da lista visível.
+    val selectedAlbumHiddenStates = albumsWithStats.filter { selectedAlbumIds.contains(it.album.id) }.map { it.isHidden }
+    val selectedFolderHiddenStates = deviceFolders.filter { selectedFolderNames.contains(it.name) }.map { it.isHidden }
+    val totalSelectedCount = selectedAlbumIds.size + selectedFolderNames.size
+    val canDeleteSelection = selectedFolderNames.isEmpty() && selectedAlbumIds.isNotEmpty()
+    val allSelectedHidden = totalSelectedCount > 0 &&
+        (selectedAlbumHiddenStates + selectedFolderHiddenStates).all { it }
 
     androidx.compose.runtime.LaunchedEffect(sortOption) {
         gridState.scrollToItem(0)
@@ -139,7 +133,7 @@ fun AlbumsScreen(
         topBar = {
             if (selectionMode) {
                 CenterAlignedTopAppBar(
-                    title = { Text("${selectedKeys.size} selecionado${if (selectedKeys.size == 1) "" else "s"}") },
+                    title = { Text("$totalSelectedCount selecionado${if (totalSelectedCount == 1) "" else "s"}") },
                     navigationIcon = {
                         IconButton(onClick = { exitSelection() }) {
                             Icon(Icons.Filled.Close, contentDescription = "Cancelar seleção")
@@ -191,19 +185,14 @@ fun AlbumsScreen(
             }
         },
         bottomBar = {
-            if (selectionMode && selectedKeys.isNotEmpty()) {
+            if (selectionMode && totalSelectedCount > 0) {
                 AlbumSelectionActionBar(
-                    selectedCount = selectedKeys.size,
+                    selectedCount = totalSelectedCount,
                     onClearSelection = { exitSelection() },
                     onToggleHidden = {
                         val targetHidden = !allSelectedHidden
-                        selectedEntries.forEach { entry ->
-                            if (entry.albumId != null) {
-                                viewModel.setAlbumHidden(entry.albumId, targetHidden)
-                            } else if (entry.folderName != null) {
-                                viewModel.setFolderHidden(entry.folderName, targetHidden)
-                            }
-                        }
+                        selectedAlbumIds.forEach { id -> viewModel.setAlbumHidden(id, targetHidden) }
+                        selectedFolderNames.forEach { name -> viewModel.setFolderHidden(name, targetHidden) }
                         exitSelection()
                     },
                     hideLabel = if (allSelectedHidden) "Mostrar" else "Ocultar",
@@ -237,7 +226,6 @@ fun AlbumsScreen(
                             )
                         }
                         items(visibleAlbums, key = { "album_${it.album.id}" }) { stats ->
-                            val key = "album_${stats.album.id}"
                             AlbumCard(
                                 title = stats.album.name,
                                 coverUri = stats.coverUri,
@@ -247,21 +235,20 @@ fun AlbumsScreen(
                                 isHidden = stats.isHidden,
                                 icon = Icons.Filled.PhotoAlbum,
                                 selectionMode = selectionMode,
-                                isSelected = selectedKeys.contains(key),
+                                isSelected = selectedAlbumIds.contains(stats.album.id),
                                 onClick = {
-                                    if (selectionMode) toggleSelection(key)
+                                    if (selectionMode) toggleAlbumSelection(stats.album.id)
                                     else onOpenAlbum(stats.album.id, stats.album.isSecret)
                                 },
                                 onLongClick = {
                                     selectionMode = true
-                                    toggleSelection(key)
+                                    toggleAlbumSelection(stats.album.id)
                                 }
                             )
                         }
                     }
                     if (normalFolders.isNotEmpty()) {
                         items(normalFolders, key = { "folder_${it.name}" }) { folder ->
-                            val key = "folder_${folder.name}"
                             AlbumCard(
                                 title = folder.name,
                                 coverUri = folder.coverUri,
@@ -271,14 +258,14 @@ fun AlbumsScreen(
                                 isHidden = folder.isHidden,
                                 icon = Icons.Filled.Folder,
                                 selectionMode = selectionMode,
-                                isSelected = selectedKeys.contains(key),
+                                isSelected = selectedFolderNames.contains(folder.name),
                                 onClick = {
-                                    if (selectionMode) toggleSelection(key)
+                                    if (selectionMode) toggleFolderSelection(folder.name)
                                     else onOpenDeviceFolder(folder.name)
                                 },
                                 onLongClick = {
                                     selectionMode = true
-                                    toggleSelection(key)
+                                    toggleFolderSelection(folder.name)
                                 }
                             )
                         }
@@ -324,7 +311,7 @@ fun AlbumsScreen(
     }
 
     if (showDeleteConfirm) {
-        val count = selectedEntries.count { it.albumId != null }
+        val count = selectedAlbumIds.size
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text(if (count == 1) "Excluir álbum" else "Excluir álbuns") },
@@ -336,9 +323,7 @@ fun AlbumsScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    selectedEntries.forEach { entry ->
-                        entry.albumId?.let { viewModel.deleteAlbum(it) }
-                    }
+                    selectedAlbumIds.forEach { id -> viewModel.deleteAlbum(id) }
                     showDeleteConfirm = false
                     exitSelection()
                 }) {

@@ -35,6 +35,7 @@ import com.galeria.ui.components.PhotoGridItem
 import com.galeria.ui.components.SelectionActionBar
 import com.galeria.ui.components.SimpleVerticalScrollbar
 import com.galeria.ui.screens.albums.CreateAlbumDialog
+import com.galeria.util.FileUtils
 import com.galeria.util.rememberBulkDeleteAction
 import com.galeria.util.shareMultiplePhotos
 
@@ -99,6 +100,7 @@ fun LargeFilesScreen(
                                 isFavorite = favorites.contains(uriStr),
                                 isSelected = selected.value.contains(uriStr),
                                 selectionMode = selectionMode,
+                                sizeLabel = FileUtils.formatSize(photo.sizeBytes),
                                 onClick = {
                                     if (selectionMode) {
                                         selected.value = if (selected.value.contains(uriStr)) selected.value - uriStr else selected.value + uriStr
