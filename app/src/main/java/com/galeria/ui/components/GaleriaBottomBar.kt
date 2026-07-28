@@ -46,7 +46,11 @@ fun GaleriaBottomBar(currentRoute: String?, onSelect: (GaleriaTab) -> Unit) {
                     GaleriaTab.FAVORITOS -> Icons.Filled.Star
                 },
                 selected = currentRoute == tab.route,
-                onClick = { onSelect(tab) }
+                onClick = { onSelect(tab) },
+                // Cada item ocupa a mesma largura, garantindo que "Álbuns" fique
+                // exatamente no meio entre "Fotos" e "Favoritos", independente do
+                // comprimento do texto de cada rótulo.
+                modifier = Modifier.weight(1f)
             )
         }
     }
@@ -57,18 +61,24 @@ private fun BottomBarItem(
     tab: GaleriaTab,
     icon: ImageVector,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Icon(icon, contentDescription = tab.label, tint = color)
-        Text(tab.label, color = color, style = MaterialTheme.typography.labelSmall)
+        Text(
+            tab.label,
+            color = color,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(top = 6.dp)
+        )
     }
 }

@@ -17,14 +17,18 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -41,8 +45,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -344,8 +346,9 @@ private fun VideoPage(
             }
 
             if (durationMs > 0) {
-                Slider(
+                MinimalVideoSlider(
                     value = positionMs.toFloat(),
+                    valueRange = 0f..durationMs.toFloat(),
                     onValueChange = {
                         isSeeking = true
                         positionMs = it.toLong()
@@ -354,18 +357,92 @@ private fun VideoPage(
                         exoPlayer.seekTo(positionMs)
                         isSeeking = false
                     },
-                    valueRange = 0f..durationMs.toFloat(),
-                    colors = SliderDefaults.colors(
-                        thumbColor = Color.White,
-                        activeTrackColor = Color.White,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.3f)
-                    ),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 72.dp)
                 )
             }
+        }
+    }
+}
+
+/**
+ * Barra de progresso de vídeo fina e minimalista, no lugar do Slider padrão do Material3
+ * (que tinha uma trilha e um polegar grossos e chamativos demais para um player de mídia).
+ */
+@Composable
+private fun MinimalVideoSlider(
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val range = (valueRange.endInclusive - valueRange.start).takeIf { it > 0f } ?: 1f
+    val fraction = ((value - valueRange.start) / range).coerceIn(0f, 1f)
+
+    BoxWithConstraints(
+        modifier = modifier.height(24.dp)
+    ) {
+        val trackWidthDp = maxWidth
+        val thumbDiameter = 10.dp
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .align(Alignment.Center)
+                .pointerInput(valueRange) {
+                    detectTapGestures(onTap = { offset ->
+                        val frac = (offset.x / size.width).coerceIn(0f, 1f)
+                        onValueChange(valueRange.start + frac * range)
+                        onValueChangeFinished()
+                    })
+                }
+                .pointerInput(valueRange) {
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            val frac = (offset.x / size.width).coerceIn(0f, 1f)
+                            onValueChange(valueRange.start + frac * range)
+                        },
+                        onDrag = { change, _ ->
+                            change.consume()
+                            val frac = (change.position.x / size.width).coerceIn(0f, 1f)
+                            onValueChange(valueRange.start + frac * range)
+                        },
+                        onDragEnd = { onValueChangeFinished() },
+                        onDragCancel = { onValueChangeFinished() }
+                    )
+                }
+        ) {
+            // Trilha inativa
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(Color.White.copy(alpha = 0.3f))
+            )
+            // Trilha ativa (progresso)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxWidth(fraction)
+                    .height(2.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(Color.White)
+            )
+            // Polegar pequeno e discreto
+            val thumbOffset = (trackWidthDp * fraction) - (thumbDiameter / 2)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .offset(x = thumbOffset)
+                    .size(thumbDiameter)
+                    .clip(CircleShape)
+                    .background(Color.White)
+            )
         }
     }
 }

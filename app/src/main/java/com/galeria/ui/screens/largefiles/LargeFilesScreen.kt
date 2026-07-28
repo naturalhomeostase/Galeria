@@ -1,29 +1,21 @@
 package com.galeria.ui.screens.largefiles
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -35,17 +27,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.components.AlbumPickerDialog
+import com.galeria.ui.components.PhotoGridItem
 import com.galeria.ui.components.SelectionActionBar
+import com.galeria.ui.components.SimpleVerticalScrollbar
 import com.galeria.ui.screens.albums.CreateAlbumDialog
-import com.galeria.util.FileUtils
 import com.galeria.util.rememberBulkDeleteAction
 import com.galeria.util.shareMultiplePhotos
 
@@ -68,6 +57,7 @@ fun LargeFilesScreen(
     val selected = remember { mutableStateOf(setOf<String>()) }
     var showCopyDialog by remember { mutableStateOf(false) }
     var showCreateForCopy by remember { mutableStateOf(false) }
+    val gridState = rememberLazyGridState()
 
     fun exitSelection() {
         selectionMode = false
@@ -94,74 +84,37 @@ fun LargeFilesScreen(
                     Text("Nenhuma foto encontrada.")
                 }
             } else {
-                LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    items(sortedPhotos, key = { it.id }) { photo ->
-                        val uriStr = photo.uri.toString()
-                        val isSelected = selected.value.contains(uriStr)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .combinedClickable(
-                                    onClick = {
-                                        if (selectionMode) {
-                                            selected.value = if (isSelected) selected.value - uriStr else selected.value + uriStr
-                                        } else {
-                                            val idx = allUris.indexOf(uriStr)
-                                            onOpenPhoto(allUris, idx)
-                                        }
-                                    },
-                                    onLongClick = {
-                                        selectionMode = true
-                                        selected.value = selected.value + uriStr
+                Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+                    LazyVerticalGrid(
+                        state = gridState,
+                        columns = GridCells.Fixed(3),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier.padding(horizontal = 2.dp)
+                    ) {
+                        items(sortedPhotos, key = { it.id }) { photo ->
+                            val uriStr = photo.uri.toString()
+                            PhotoGridItem(
+                                photo = photo,
+                                isFavorite = favorites.contains(uriStr),
+                                isSelected = selected.value.contains(uriStr),
+                                selectionMode = selectionMode,
+                                onClick = {
+                                    if (selectionMode) {
+                                        selected.value = if (selected.value.contains(uriStr)) selected.value - uriStr else selected.value + uriStr
+                                    } else {
+                                        val idx = allUris.indexOf(uriStr)
+                                        onOpenPhoto(allUris, idx)
                                     }
-                                )
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(56.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                            ) {
-                                AsyncImage(
-                                    model = photo.uri,
-                                    contentDescription = photo.displayName,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(start = 12.dp)
-                            ) {
-                                Text(photo.displayName, maxLines = 1, style = MaterialTheme.typography.bodyMedium)
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        FileUtils.formatSize(photo.sizeBytes),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    if (favorites.contains(uriStr)) {
-                                        Icon(
-                                            Icons.Filled.Star,
-                                            contentDescription = null,
-                                            tint = Color(0xFFFFC107),
-                                            modifier = Modifier.padding(start = 6.dp).size(14.dp)
-                                        )
-                                    }
+                                },
+                                onLongClick = {
+                                    selectionMode = true
+                                    selected.value = selected.value + uriStr
                                 }
-                            }
-                            if (selectionMode) {
-                                Icon(
-                                    imageVector = Icons.Filled.CheckCircle,
-                                    contentDescription = null,
-                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                                )
-                            }
+                            )
                         }
-                        Divider()
                     }
+                    SimpleVerticalScrollbar(state = gridState)
                 }
             }
 

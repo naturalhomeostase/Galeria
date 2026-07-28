@@ -77,17 +77,16 @@ fun BoxScope.SimpleVerticalScrollbar(state: LazyGridState, modifier: Modifier = 
     ) {
         val thumbHeightPx = trackHeightPx * thumbFraction
         val rawOffsetPx = (trackHeightPx - thumbHeightPx) * progress
-        val animatedOffsetPx by animateFloatAsState(
-            targetValue = rawOffsetPx,
-            animationSpec = tween(durationMillis = 80),
-            label = "scrollbarOffset"
-        )
         val thumbHeightDp = with(density) { thumbHeightPx.toDp() }
 
+        // A posição do polegar acompanha a rolagem diretamente (sem animação defasada),
+        // que é o que causava o "engasgo"/artefato visual ao rolar rápido: a barra tentava
+        // alcançar a posição real com atraso, gerando distorção. A lista em si já rola de
+        // forma suave, então o polegar só precisa refletir a posição atual em tempo real.
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .graphicsLayer { translationY = animatedOffsetPx }
+                .graphicsLayer { translationY = rawOffsetPx }
                 .width(4.dp)
                 .height(thumbHeightDp)
                 .clip(RoundedCornerShape(4.dp))
