@@ -65,8 +65,18 @@ fun BoxScope.SimpleVerticalScrollbar(state: LazyGridState, modifier: Modifier = 
         ?: 0f
     val firstVisible = (firstVisibleItemInfo?.index ?: 0).toFloat() + subItemFraction
     val visibleCount = layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
-    val progress = (firstVisible / totalItems.toFloat()).coerceIn(0f, 1f)
     val thumbFraction = (visibleCount.toFloat() / totalItems.toFloat()).coerceIn(0.06f, 1f)
+
+    // A estimativa por índice acima parte do princípio de que todo item tem a mesma altura,
+    // o que não é verdade quando há cabeçalhos de seção (ocupam a linha inteira) misturados
+    // com células de álbum na mesma grade — isso fazia o polegar "sobrar" espaço e nunca
+    // encostar de fato no final da barra, mesmo com o usuário já vendo o último item. Por
+    // isso, os limites reais de rolagem (início/fim) têm prioridade sobre a estimativa.
+    val progress = when {
+        !state.canScrollForward -> 1f
+        !state.canScrollBackward -> 0f
+        else -> (firstVisible / totalItems.toFloat()).coerceIn(0f, 1f)
+    }
 
     Box(
         modifier = modifier

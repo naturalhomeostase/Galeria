@@ -4,14 +4,19 @@ import android.app.Activity
 import android.app.WallpaperManager
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.os.Build
 import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.AnimationState
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateDecay
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.splineBasedDecay
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -71,8 +76,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -303,7 +310,15 @@ private fun VideoPage(
         exoPlayer.addListener(listener)
         onDispose {
             exoPlayer.removeListener(listener)
-            exoPlayer.release()
+            // player.release() é uma chamada bloqueante (derruba decodificador, superfície de
+            // vídeo, threads internas) que pode levar dezenas/centenas de ms — se rodar direto
+            // aqui, ela trava bem o frame em que a navegação de volta acontece, dando aquela
+            // sensação de "demorinha" antes de voltar para o álbum. Adiar pra próxima iteração
+            // do loop principal deixa a transição de navegação acontecer primeiro, sem travar.
+            val playerToRelease = exoPlayer
+            Handler(Looper.getMainLooper()).post {
+                playerToRelease.release()
+            }
         }
     }
 
@@ -495,6 +510,7 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
     var offsetX by remember(uriStr) { mutableStateOf(0f) }
     var offsetY by remember(uriStr) { mutableStateOf(0f) }
     val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
 
     val painter = rememberAsyncImagePainter(model = Uri.parse(uriStr))
 
@@ -572,6 +588,7 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
                         awaitFirstDown(requireUnconsumed = false)
                         var pastSlop = false
                         var accumPan = Offset.Zero
+                        val velocityTracker = VelocityTracker()
                         do {
                             val event = awaitPointerEvent()
                             val zoomChange = event.calculateZoom()
@@ -595,14 +612,44 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
                                     scale = newScale
                                     offsetX = (offsetX + panChange.x).coerceIn(-maxX, maxX)
                                     offsetY = (offsetY + panChange.y).coerceIn(-maxY, maxY)
-                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                    event.changes.forEach { change ->
+                                        if (change.positionChanged()) {
+                                            // Registra a velocidade do arraste pra poder "arremessar"
+                                            // a imagem com inércia ao soltar o dedo (fling), em vez de
+                                            // parar seco — é o que dá a sensação de leveza ao arrastar
+                                            // uma imagem ampliada, tipo Google Fotos.
+                                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+                                            change.consume()
+                                        }
+                                    }
                                 }
                             }
                         } while (event.changes.any { it.pressed })
 
-                        // Se soltar perto de 1x (pinça quase fechada), volta suavemente ao normal.
                         if (pastSlop && scale < ZOOM_SNAP_BACK_THRESHOLD) {
+                            // Se soltar perto de 1x (pinça quase fechada), volta suavemente ao normal.
                             animateTo(1f, 0f, 0f)
+                        } else if (pastSlop && scale > 1f) {
+                            // Continua o arraste com inércia, desacelerando aos poucos, até bater
+                            // no limite da imagem ou perder toda a velocidade.
+                            val velocity = velocityTracker.calculateVelocity()
+                            val (maxX, maxY) = maxOffsets(size, scale)
+                            scope.launch {
+                                launch {
+                                    AnimationState(initialValue = offsetX, initialVelocity = velocity.x)
+                                        .animateDecay(splineBasedDecay(density)) {
+                                            offsetX = value.coerceIn(-maxX, maxX)
+                                            if (value < -maxX || value > maxX) cancelAnimation()
+                                        }
+                                }
+                                launch {
+                                    AnimationState(initialValue = offsetY, initialVelocity = velocity.y)
+                                        .animateDecay(splineBasedDecay(density)) {
+                                            offsetY = value.coerceIn(-maxY, maxY)
+                                            if (value < -maxY || value > maxY) cancelAnimation()
+                                        }
+                                }
+                            }
                         }
                     }
                 }
