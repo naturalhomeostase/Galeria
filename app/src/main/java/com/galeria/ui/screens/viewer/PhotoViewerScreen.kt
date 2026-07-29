@@ -87,12 +87,16 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import android.view.LayoutInflater
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.request.ImageRequest
 import me.saket.telephoto.zoomable.coil.ZoomableAsyncImage
+import me.saket.telephoto.zoomable.rememberZoomableState
+import me.saket.telephoto.zoomable.zoomable
+import com.galeria.R
 import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.screens.info.PhotoInfoSheet
 import kotlinx.coroutines.delay
@@ -337,19 +341,18 @@ private fun VideoPage(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(uriStr) {
-                detectTapGestures(onTap = { onTap() })
-            }
-    ) {
+    // Estado de zoom próprio dessa página, reiniciado sempre que o vídeo muda (mesma ideia do
+    // ZoomableImage usado para fotos) para não "herdar" o zoom do vídeo anterior ao trocar de página.
+    val zoomableState = rememberZoomableState()
+
+    Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .zoomable(state = zoomableState, onClick = { onTap() }),
             factory = { ctx ->
-                PlayerView(ctx).apply {
+                (LayoutInflater.from(ctx).inflate(R.layout.galeria_video_player_view, null) as PlayerView).apply {
                     player = exoPlayer
-                    useController = false
                 }
             }
         )

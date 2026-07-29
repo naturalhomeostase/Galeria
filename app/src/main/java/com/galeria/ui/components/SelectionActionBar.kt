@@ -58,7 +58,7 @@ fun SelectionActionBar(
             IconButton(onClick = onClearSelection) {
                 Icon(Icons.Filled.Close, contentDescription = "Cancelar seleção")
             }
-            Text("$selectedCount selecionada${if (selectedCount == 1) "" else "s"}")
+            Text("$selectedCount")
         }
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),

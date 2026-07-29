@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    PlayerView usado no visualizador de vídeos do álbum.
+
+    Por padrão, PlayerView desenha o vídeo numa SurfaceView. SurfaceView tem uma "janela" de
+    renderização própria, separada da árvore normal de Views/Compose, e quando várias instâncias
+    dela existem dentro de um HorizontalPager (uma por página vizinha) a recomposição/reciclagem
+    rápida de páginas faz com que a superfície nova não seja anexada a tempo — o resultado é a
+    tela preta que só "aparece" quando o timing calha de dar certo. Forçando texture_view aqui,
+    o vídeo passa a ser desenhado como qualquer outra View normal (compositada junto com o resto
+    da hierarquia), o que resolve a tela preta ao arrastar entre vídeos no pager.
+-->
+<androidx.media3.ui.PlayerView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/galeria_player_view"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black"
+    app:surface_type="texture_view"
+    app:use_controller="false"
+    app:resize_mode="fit" />

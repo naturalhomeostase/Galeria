@@ -5,6 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -87,6 +88,7 @@ fun EditorScreen(
     var strokeWidth by remember { mutableStateOf(0.01f) }
     var currentPoints by remember { mutableStateOf(listOf<Offset>()) }
     var showTextDialog by remember { mutableStateOf(false) }
+    var cropMode by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -211,39 +213,63 @@ fun EditorScreen(
                                     }
                             )
                         }
+
+                        if (cropMode) {
+                            FreeCropOverlay(
+                                onApply = { l, t, r, b ->
+                                    viewModel.crop(l, t, r, b)
+                                    cropMode = false
+                                },
+                                onCancel = { cropMode = false }
+                            )
+                        }
                     }
                 }
 
-                TabRow(selectedTabIndex = tab.ordinal) {
-                    EditorTab.entries.forEach { t ->
-                        Tab(selected = tab == t, onClick = { tab = t }, text = { Text(t.label) })
+                if (cropMode) {
+                    // Enquanto corta livremente, os botões de Aplicar/Cancelar já ficam sobre a
+                    // própria imagem (no FreeCropOverlay) — some com as abas embaixo pra não dar
+                    // a entender que dá pra trocar de ferramenta no meio do corte.
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            "Arraste os cantos para ajustar o corte",
+                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                }
+                } else {
+                    TabRow(selectedTabIndex = tab.ordinal) {
+                        EditorTab.entries.forEach { t ->
+                            Tab(selected = tab == t, onClick = { tab = t }, text = { Text(t.label) })
+                        }
+                    }
 
-                when (tab) {
-                    EditorTab.AJUSTAR -> AjustarPanel(
-                        onRotate = { viewModel.rotate90() },
-                        onFlip = { viewModel.flipHorizontal() },
-                        onCropRatio = { ratio -> viewModel.cropToAspectRatio(ratio) }
-                    )
-                    EditorTab.COR -> CorPanel(
-                        brightness = state.brightness,
-                        contrast = state.contrast,
-                        saturation = state.saturation,
-                        filter = state.filter,
-                        onBrightness = viewModel::setBrightness,
-                        onContrast = viewModel::setContrast,
-                        onSaturation = viewModel::setSaturation,
-                        onFilter = viewModel::setFilter
-                    )
-                    EditorTab.DESENHAR -> DesenharPanel(
-                        color = drawColor,
-                        widthFraction = strokeWidth,
-                        onColor = { drawColor = it },
-                        onWidth = { strokeWidth = it },
-                        onUndo = { viewModel.undoStroke() }
-                    )
-                    EditorTab.TEXTO -> TextoPanel(onAdd = { showTextDialog = true })
+                    when (tab) {
+                        EditorTab.AJUSTAR -> AjustarPanel(
+                            onRotate = { viewModel.rotate90() },
+                            onFlip = { viewModel.flipHorizontal() },
+                            onCropRatio = { ratio -> viewModel.cropToAspectRatio(ratio) },
+                            onCropFree = { cropMode = true }
+                        )
+                        EditorTab.COR -> CorPanel(
+                            brightness = state.brightness,
+                            contrast = state.contrast,
+                            saturation = state.saturation,
+                            filter = state.filter,
+                            onBrightness = viewModel::setBrightness,
+                            onContrast = viewModel::setContrast,
+                            onSaturation = viewModel::setSaturation,
+                            onFilter = viewModel::setFilter
+                        )
+                        EditorTab.DESENHAR -> DesenharPanel(
+                            color = drawColor,
+                            widthFraction = strokeWidth,
+                            onColor = { drawColor = it },
+                            onWidth = { strokeWidth = it },
+                            onUndo = { viewModel.undoStroke() }
+                        )
+                        EditorTab.TEXTO -> TextoPanel(onAdd = { showTextDialog = true })
+                    }
                 }
             }
         }
@@ -290,16 +316,133 @@ private fun buildComposeColorMatrix(brightness: Float, contrast: Float, saturati
 }
 
 @Composable
-private fun AjustarPanel(onRotate: () -> Unit, onFlip: () -> Unit, onCropRatio: (Float) -> Unit) {
+private fun AjustarPanel(onRotate: () -> Unit, onFlip: () -> Unit, onCropRatio: (Float) -> Unit, onCropFree: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(androidx.compose.foundation.rememberScrollState())
+            .padding(12.dp),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
         ToolButton(icon = Icons.Filled.Rotate90DegreesCcw, label = "Girar", onClick = onRotate)
         ToolButton(icon = Icons.Filled.Flip, label = "Espelhar", onClick = onFlip)
+        ToolButton(icon = Icons.Filled.Crop, label = "Livre", onClick = onCropFree)
         ToolButton(icon = Icons.Filled.Crop, label = "1:1", onClick = { onCropRatio(1f) })
         ToolButton(icon = Icons.Filled.Crop, label = "4:3", onClick = { onCropRatio(4f / 3f) })
         ToolButton(icon = Icons.Filled.Crop, label = "16:9", onClick = { onCropRatio(16f / 9f) })
+    }
+}
+
+/**
+ * Overlay de corte livre: retângulo com 4 alças nos cantos que podem ser arrastadas
+ * independentemente para definir uma área de corte com qualquer proporção. Preenche o mesmo
+ * Box da imagem (mesmas dimensões/posição), então as frações (0f..1f) calculadas aqui já
+ * correspondem 1:1 às frações que ImageEditUtils.cropBitmap espera.
+ */
+@Composable
+private fun FreeCropOverlay(
+    onApply: (Float, Float, Float, Float) -> Unit,
+    onCancel: () -> Unit
+) {
+    var left by remember { mutableStateOf(0.08f) }
+    var top by remember { mutableStateOf(0.08f) }
+    var right by remember { mutableStateOf(0.92f) }
+    var bottom by remember { mutableStateOf(0.92f) }
+    val minSize = 0.15f
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val l = left * size.width
+            val t = top * size.height
+            val r = right * size.width
+            val b = bottom * size.height
+            val dim = Color.Black.copy(alpha = 0.55f)
+            drawRect(color = dim, topLeft = Offset(0f, 0f), size = androidx.compose.ui.geometry.Size(size.width, t))
+            drawRect(color = dim, topLeft = Offset(0f, b), size = androidx.compose.ui.geometry.Size(size.width, size.height - b))
+            drawRect(color = dim, topLeft = Offset(0f, t), size = androidx.compose.ui.geometry.Size(l, b - t))
+            drawRect(color = dim, topLeft = Offset(r, t), size = androidx.compose.ui.geometry.Size(size.width - r, b - t))
+            drawRect(
+                color = Color.White,
+                topLeft = Offset(l, t),
+                size = androidx.compose.ui.geometry.Size(r - l, b - t),
+                style = Stroke(width = 2.dp.toPx())
+            )
+        }
+
+        CropHandle(xFraction = left, yFraction = top) { dxPx, dyPx, widthPx, heightPx ->
+            left = (left + dxPx / widthPx).coerceIn(0f, right - minSize)
+            top = (top + dyPx / heightPx).coerceIn(0f, bottom - minSize)
+        }
+        CropHandle(xFraction = right, yFraction = top) { dxPx, dyPx, widthPx, heightPx ->
+            right = (right + dxPx / widthPx).coerceIn(left + minSize, 1f)
+            top = (top + dyPx / heightPx).coerceIn(0f, bottom - minSize)
+        }
+        CropHandle(xFraction = left, yFraction = bottom) { dxPx, dyPx, widthPx, heightPx ->
+            left = (left + dxPx / widthPx).coerceIn(0f, right - minSize)
+            bottom = (bottom + dyPx / heightPx).coerceIn(top + minSize, 1f)
+        }
+        CropHandle(xFraction = right, yFraction = bottom) { dxPx, dyPx, widthPx, heightPx ->
+            right = (right + dxPx / widthPx).coerceIn(left + minSize, 1f)
+            bottom = (bottom + dyPx / heightPx).coerceIn(top + minSize, 1f)
+        }
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            TextButton(onClick = onCancel) { Text("Cancelar", color = Color.White) }
+            Button(onClick = { onApply(left, top, right, bottom) }) { Text("Aplicar corte") }
+        }
+    }
+}
+
+/**
+ * Alça arrastável de um canto do retângulo de corte. Fica centralizada exatamente sobre o
+ * ponto (xFraction, yFraction) do Box pai, e reporta o arraste em pixels — a conversão pra
+ * fração é feita pelo chamador, que também decide como limitar cada lado.
+ */
+@Composable
+private fun CropHandle(
+    xFraction: Float,
+    yFraction: Float,
+    onDrag: (dxPx: Float, dyPx: Float, containerWidthPx: Float, containerHeightPx: Float) -> Unit
+) {
+    var containerWidthPx by remember { mutableStateOf(1f) }
+    var containerHeightPx by remember { mutableStateOf(1f) }
+    val handleSize = 36.dp
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .layout { measurable, constraints ->
+                containerWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+                containerHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
+                val placeable = measurable.measure(
+                    androidx.compose.ui.unit.Constraints.fixed(handleSize.roundToPx(), handleSize.roundToPx())
+                )
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    placeable.place(
+                        (xFraction * constraints.maxWidth - placeable.width / 2f).toInt(),
+                        (yFraction * constraints.maxHeight - placeable.height / 2f).toInt()
+                    )
+                }
+            }
+            .pointerInput(Unit) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    onDrag(dragAmount.x, dragAmount.y, containerWidthPx, containerHeightPx)
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(Color.White)
+        )
     }
 }
 
