@@ -16,10 +16,12 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroidSize
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -82,7 +84,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import coil.compose.AsyncImage
+import coil.compose.rememberAsyncImagePainter
 import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.screens.info.PhotoInfoSheet
 import kotlinx.coroutines.delay
@@ -470,6 +472,18 @@ private const val ZOOM_SNAP_BACK_THRESHOLD = 1.05f
  *   - há 2 dedos na tela (pinça, para começar a ampliar a partir de 1x); ou
  *   - a imagem já está ampliada (scale > 1x), permitindo arrastar com 1 dedo.
  * Fora isso, o toque passa direto para o pager, preservando o swipe entre fotos.
+ *
+ * Detalhes que foram ajustados depois de testar num aparelho real:
+ *   - Um pequeno limiar de movimento (touch slop) precisa passar antes de tratar o toque como
+ *     arraste/pinça; sem isso, os dois toques rápidos de um duplo-toque (quando já ampliado)
+ *     eram capturados como um "arrasto" minúsculo, quebrando o duplo-toque pra diminuir de novo.
+ *   - Os limites do arraste usam o tamanho real da imagem já ajustada à tela (respeitando a
+ *     proporção, já que `ContentScale.Fit` pode deixar faixas vazias nas laterais ou em cima/
+ *     embaixo), não o tamanho da tela inteira — antes disso, o cálculo permitia arrastar além
+ *     da borda real da imagem, dando a sensação de que ela "descentralizava" para os cantos.
+ *   - `graphicsLayer` é usado na forma de lambda (em vez de passar os valores direto), que é a
+ *     forma que o Compose otimiza para não recompor a tela inteira a cada pixel arrastado —
+ *     essencial pra o arraste parecer leve e fluido em vez de pesado/atrasado.
  */
 @Composable
 private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
@@ -482,9 +496,31 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
     var offsetY by remember(uriStr) { mutableStateOf(0f) }
     val scope = rememberCoroutineScope()
 
+    val painter = rememberAsyncImagePainter(model = Uri.parse(uriStr))
+
+    // Tamanho real da imagem já ajustada à tela (respeitando a proporção original, como o
+    // ContentScale.Fit faz), usado para calcular até onde dá pra arrastar sem "descentralizar".
+    fun fittedSize(boxSize: IntSize): androidx.compose.ui.geometry.Size {
+        val intrinsic = painter.intrinsicSize
+        if (boxSize.width <= 0 || boxSize.height <= 0 ||
+            intrinsic.width.isNaN() || intrinsic.height.isNaN() ||
+            intrinsic.width <= 0f || intrinsic.height <= 0f
+        ) {
+            return androidx.compose.ui.geometry.Size(boxSize.width.toFloat(), boxSize.height.toFloat())
+        }
+        val boxAspect = boxSize.width.toFloat() / boxSize.height.toFloat()
+        val imageAspect = intrinsic.width / intrinsic.height
+        return if (imageAspect > boxAspect) {
+            androidx.compose.ui.geometry.Size(boxSize.width.toFloat(), boxSize.width / imageAspect)
+        } else {
+            androidx.compose.ui.geometry.Size(boxSize.height * imageAspect, boxSize.height.toFloat())
+        }
+    }
+
     fun maxOffsets(boxSize: IntSize, s: Float): Pair<Float, Float> {
-        val maxX = (boxSize.width * (s - 1f) / 2f).coerceAtLeast(0f)
-        val maxY = (boxSize.height * (s - 1f) / 2f).coerceAtLeast(0f)
+        val fitted = fittedSize(boxSize)
+        val maxX = (fitted.width * (s - 1f) / 2f).coerceAtLeast(0f)
+        val maxY = (fitted.height * (s - 1f) / 2f).coerceAtLeast(0f)
         return maxX to maxY
     }
 
@@ -495,7 +531,7 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
         val startX = offsetX
         val startY = offsetY
         scope.launch {
-            animate(0f, 1f, animationSpec = tween(200)) { fraction, _ ->
+            animate(0f, 1f, animationSpec = tween(220)) { fraction, _ ->
                 scale = startScale + (targetScale - startScale) * fraction
                 offsetX = startX + (targetOffsetX - startX) * fraction
                 offsetY = startY + (targetOffsetY - startY) * fraction
@@ -512,18 +548,18 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        AsyncImage(
-            model = Uri.parse(uriStr),
+        Image(
+            painter = painter,
             contentDescription = null,
             contentScale = ContentScale.Fit,
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offsetX,
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = offsetX
                     translationY = offsetY
-                )
+                }
                 .pointerInput(uriStr) {
                     detectTapGestures(
                         onTap = { onTap() },
@@ -531,29 +567,41 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
                     )
                 }
                 .pointerInput(uriStr) {
+                    val touchSlop = viewConfiguration.touchSlop
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false)
-                        var pinchOrPanStarted = false
+                        var pastSlop = false
+                        var accumPan = Offset.Zero
                         do {
                             val event = awaitPointerEvent()
                             val zoomChange = event.calculateZoom()
                             val panChange = event.calculatePan()
                             val pointerCount = event.changes.count { it.pressed }
-                            val shouldCapture = pointerCount > 1 || scale > 1f
+                            val allowGesture = pointerCount > 1 || scale > 1f
 
-                            if (shouldCapture && (zoomChange != 1f || panChange != Offset.Zero)) {
-                                pinchOrPanStarted = true
-                                val newScale = (scale * zoomChange).coerceIn(1f, MAX_ZOOM)
-                                val (maxX, maxY) = maxOffsets(size, newScale)
-                                scale = newScale
-                                offsetX = (offsetX + panChange.x).coerceIn(-maxX, maxX)
-                                offsetY = (offsetY + panChange.y).coerceIn(-maxY, maxY)
-                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            if (allowGesture) {
+                                if (!pastSlop) {
+                                    accumPan += panChange
+                                    val centroidSize = event.calculateCentroidSize(useCurrent = false)
+                                    val zoomMotion = kotlin.math.abs(1f - zoomChange) * centroidSize
+                                    val panMotion = accumPan.getDistance()
+                                    if (zoomMotion > touchSlop || panMotion > touchSlop) {
+                                        pastSlop = true
+                                    }
+                                }
+                                if (pastSlop) {
+                                    val newScale = (scale * zoomChange).coerceIn(1f, MAX_ZOOM)
+                                    val (maxX, maxY) = maxOffsets(size, newScale)
+                                    scale = newScale
+                                    offsetX = (offsetX + panChange.x).coerceIn(-maxX, maxX)
+                                    offsetY = (offsetY + panChange.y).coerceIn(-maxY, maxY)
+                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                }
                             }
                         } while (event.changes.any { it.pressed })
 
                         // Se soltar perto de 1x (pinça quase fechada), volta suavemente ao normal.
-                        if (pinchOrPanStarted && scale < ZOOM_SNAP_BACK_THRESHOLD) {
+                        if (pastSlop && scale < ZOOM_SNAP_BACK_THRESHOLD) {
                             animateTo(1f, 0f, 0f)
                         }
                     }

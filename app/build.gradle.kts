@@ -4,6 +4,11 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// O GitHub Actions incrementa GITHUB_RUN_NUMBER a cada execução do workflow, então cada build
+// publicada tem um versionCode maior que a anterior automaticamente (necessário para o Android
+// reconhecer como uma atualização válida). Localmente (fora do CI), cai no valor 1.
+val ciVersionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+
 android {
     namespace = "com.galeria"
     compileSdk = 35
@@ -12,16 +17,33 @@ android {
         applicationId = "com.galeria"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = ciVersionCode
+        versionName = "1.0.$ciVersionCode"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("../keystore/galeria-release.keystore")
+            storePassword = "galeria2026"
+            keyAlias = "galeria"
+            keyPassword = "galeria2026"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             isMinifyEnabled = false
+            // Usa a mesma chave de assinatura do release, em vez da chave de debug automática
+            // (que no CI é gerada do zero a cada execução, já que o runner é descartado depois
+            // — cada build ficava com uma assinatura diferente da anterior). É isso que fazia
+            // o Android recusar instalar por cima, exigindo desinstalar a versão antiga antes.
+            // Com uma chave fixa e commitada no repo, toda build (debug ou release) passa a
+            // ter sempre a mesma assinatura, permitindo atualizar normalmente.
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
