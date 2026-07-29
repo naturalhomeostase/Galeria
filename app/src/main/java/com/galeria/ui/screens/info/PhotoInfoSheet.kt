@@ -32,9 +32,10 @@ fun PhotoInfoSheet(photo: Photo, onDismiss: () -> Unit) {
     var exifInfo by remember(photo.uri) { mutableStateOf<ExifInfo?>(null) }
 
     LaunchedEffect(photo.uri, photo.isVideo) {
-        if (!photo.isVideo) {
-            exifInfo = ExifUtils.readExif(context, photo.uri)
-        }
+        // ExifInterface também consegue ler metadados (fabricante/modelo/GPS) embutidos em
+        // alguns contêineres de vídeo (mp4/mov), então vale tentar pra vídeo também — se não
+        // houver nada, hasCameraInfo fica false e a seção "Câmera" simplesmente não aparece.
+        exifInfo = ExifUtils.readExif(context, photo.uri)
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {

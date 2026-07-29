@@ -30,6 +30,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -297,7 +298,15 @@ private fun VideoPage(
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(Uri.parse(uriStr)))
             repeatMode = Player.REPEAT_MODE_ONE
-            prepare()
+            // Preparar (e portanto alocar o decodificador de hardware) só acontece no
+            // LaunchedEffect(isCurrentPage) abaixo, quando a página vira a atual — não aqui.
+            // Preparar todo vídeo assim que ele é composto (inclusive páginas vizinhas que o
+            // Pager mantém compostas durante o gesto de arraste) deixava várias instâncias de
+            // decodificador ativas ao mesmo tempo. A maioria dos aparelhos só permite um
+            // número pequeno de decodificadores de vídeo simultâneos (às vezes só 1 ou 2 pra
+            // certos codecs) — ao estourar esse limite, o vídeo "excedente" falha ao preparar
+            // e fica com tela preta permanente, sempre nos mesmos vídeos (os que acabam caindo
+            // além do limite do aparelho).
         }
     }
 
@@ -305,11 +314,18 @@ private fun VideoPage(
     var positionMs by remember(uriStr) { mutableStateOf(0L) }
     var durationMs by remember(uriStr) { mutableStateOf(0L) }
     var isSeeking by remember(uriStr) { mutableStateOf(false) }
+    var hasError by remember(uriStr) { mutableStateOf(false) }
 
     DisposableEffect(uriStr) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
+            }
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                hasError = true
+            }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) hasError = false
             }
         }
         exoPlayer.addListener(listener)
@@ -328,7 +344,20 @@ private fun VideoPage(
     }
 
     LaunchedEffect(isCurrentPage) {
-        if (isCurrentPage) exoPlayer.play() else exoPlayer.pause()
+        if (isCurrentPage) {
+            if (exoPlayer.playbackState == Player.STATE_IDLE) {
+                exoPlayer.prepare()
+            }
+            exoPlayer.play()
+        } else {
+            exoPlayer.pause()
+            // Libera o decodificador assim que a página deixa de ser a atual, em vez de
+            // segurá-lo até o dispose completo — é o que garante que só a página visível
+            // tenha um decodificador ativo por vez.
+            if (exoPlayer.playbackState != Player.STATE_IDLE) {
+                exoPlayer.stop()
+            }
+        }
     }
 
     LaunchedEffect(uriStr) {
@@ -357,7 +386,19 @@ private fun VideoPage(
             }
         )
 
-        if (chromeVisible) {
+        if (hasError) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Não foi possível carregar este vídeo", color = Color.White)
+                    TextButton(onClick = {
+                        hasError = false
+                        exoPlayer.prepare()
+                    }) {
+                        Text("Tentar novamente", color = Color.White)
+                    }
+                }
+            }
+        } else if (chromeVisible) {
             IconButton(
                 onClick = {
                     if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
