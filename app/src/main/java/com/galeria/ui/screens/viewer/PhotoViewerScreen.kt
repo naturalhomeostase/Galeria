@@ -91,7 +91,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
+import me.saket.telephoto.zoomable.coil.ZoomableAsyncImage
 import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.screens.info.PhotoInfoSheet
 import kotlinx.coroutines.delay
@@ -474,185 +475,24 @@ private fun MinimalVideoSlider(
     }
 }
 
-private const val ZOOM_SNAP_BACK_THRESHOLD = 1.05f
-
 /**
- * Visualizador de imagem com zoom por pinça (pinch-to-zoom) e arraste em qualquer direção
- * quando ampliado, no estilo de apps de galeria como o Google Fotos.
- *
- * Implementado com um gesto customizado (em vez do `detectTransformGestures` pronto do
- * Compose) porque essa tela fica dentro de um HorizontalPager: se a imagem consumisse
- * qualquer arraste de um dedo só, mesmo sem estar ampliada, o gesto de trocar de foto
- * (swipe) pararia de funcionar. Por isso, a lógica só "captura" o gesto quando:
- *   - há 2 dedos na tela (pinça, para começar a ampliar a partir de 1x); ou
- *   - a imagem já está ampliada (scale > 1x), permitindo arrastar com 1 dedo.
- * Fora isso, o toque passa direto para o pager, preservando o swipe entre fotos.
- *
- * Detalhes que foram ajustados depois de testar num aparelho real:
- *   - Um pequeno limiar de movimento (touch slop) precisa passar antes de tratar o toque como
- *     arraste/pinça; sem isso, os dois toques rápidos de um duplo-toque (quando já ampliado)
- *     eram capturados como um "arrasto" minúsculo, quebrando o duplo-toque pra diminuir de novo.
- *   - Os limites do arraste usam o tamanho real da imagem já ajustada à tela (respeitando a
- *     proporção, já que `ContentScale.Fit` pode deixar faixas vazias nas laterais ou em cima/
- *     embaixo), não o tamanho da tela inteira — antes disso, o cálculo permitia arrastar além
- *     da borda real da imagem, dando a sensação de que ela "descentralizava" para os cantos.
- *   - `graphicsLayer` é usado na forma de lambda (em vez de passar os valores direto), que é a
- *     forma que o Compose otimiza para não recompor a tela inteira a cada pixel arrastado —
- *     essencial pra o arraste parecer leve e fluido em vez de pesado/atrasado.
+ * Visualizador de imagem com zoom por pinça e arraste fluido, usando a biblioteca open source
+ * Telephoto (https://github.com/saket/telephoto), feita especificamente para esse cenário —
+ * zoom de imagem dentro de um carrossel/pager de fotos, coexistindo bem com o swipe entre
+ * fotos quando não está ampliada. Depois de algumas tentativas escrevendo esse gesto na mão
+ * (com bugs de fluidez que não ficaram bons o suficiente), troquei para essa biblioteca já
+ * testada e otimizada por muita gente para exatamente esse caso de uso.
  */
 @Composable
 private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
-    // Estado simples (não Animatable): dentro do bloco de gesto abaixo (awaitEachGesture) o
-    // Kotlin só permite chamar funções suspensas do próprio escopo restrito do ponteiro — por
-    // isso Animatable.snapTo não pode ser chamado ali dentro. Atribuição direta de var, porém,
-    // não é uma chamada suspensa e funciona normalmente durante o arraste/pinça em tempo real.
-    var scale by remember(uriStr) { mutableStateOf(1f) }
-    var offsetX by remember(uriStr) { mutableStateOf(0f) }
-    var offsetY by remember(uriStr) { mutableStateOf(0f) }
-    val scope = rememberCoroutineScope()
-    val density = LocalDensity.current
-
-    val painter = rememberAsyncImagePainter(model = Uri.parse(uriStr))
-
-    // Tamanho real da imagem já ajustada à tela (respeitando a proporção original, como o
-    // ContentScale.Fit faz), usado para calcular até onde dá pra arrastar sem "descentralizar".
-    fun fittedSize(boxSize: IntSize): androidx.compose.ui.geometry.Size {
-        val intrinsic = painter.intrinsicSize
-        if (boxSize.width <= 0 || boxSize.height <= 0 ||
-            intrinsic.width.isNaN() || intrinsic.height.isNaN() ||
-            intrinsic.width <= 0f || intrinsic.height <= 0f
-        ) {
-            return androidx.compose.ui.geometry.Size(boxSize.width.toFloat(), boxSize.height.toFloat())
-        }
-        val boxAspect = boxSize.width.toFloat() / boxSize.height.toFloat()
-        val imageAspect = intrinsic.width / intrinsic.height
-        return if (imageAspect > boxAspect) {
-            androidx.compose.ui.geometry.Size(boxSize.width.toFloat(), boxSize.width / imageAspect)
-        } else {
-            androidx.compose.ui.geometry.Size(boxSize.height * imageAspect, boxSize.height.toFloat())
-        }
-    }
-
-    fun maxOffsets(boxSize: IntSize, s: Float): Pair<Float, Float> {
-        val fitted = fittedSize(boxSize)
-        val maxX = (fitted.width * (s - 1f) / 2f).coerceAtLeast(0f)
-        val maxY = (fitted.height * (s - 1f) / 2f).coerceAtLeast(0f)
-        return maxX to maxY
-    }
-
-    // Anima suavemente até um alvo (usado no double-tap e ao soltar a pinça perto de 1x).
-    // Roda fora do escopo restrito do gesto, então pode usar a função `animate` livremente.
-    fun animateTo(targetScale: Float, targetOffsetX: Float, targetOffsetY: Float) {
-        val startScale = scale
-        val startX = offsetX
-        val startY = offsetY
-        scope.launch {
-            animate(0f, 1f, animationSpec = tween(220)) { fraction, _ ->
-                scale = startScale + (targetScale - startScale) * fraction
-                offsetX = startX + (targetOffsetX - startX) * fraction
-                offsetY = startY + (targetOffsetY - startY) * fraction
-            }
-        }
-    }
-
-    fun toggleZoom() {
-        if (scale > 1f) {
-            animateTo(1f, 0f, 0f)
-        } else {
-            animateTo(MAX_ZOOM, offsetX, offsetY)
-        }
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        Image(
-            painter = painter,
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offsetX
-                    translationY = offsetY
-                }
-                .pointerInput(uriStr) {
-                    detectTapGestures(
-                        onTap = { onTap() },
-                        onDoubleTap = { toggleZoom() }
-                    )
-                }
-                .pointerInput(uriStr) {
-                    val touchSlop = viewConfiguration.touchSlop
-                    awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
-                        var pastSlop = false
-                        var accumPan = Offset.Zero
-                        val velocityTracker = VelocityTracker()
-                        do {
-                            val event = awaitPointerEvent()
-                            val zoomChange = event.calculateZoom()
-                            val panChange = event.calculatePan()
-                            val pointerCount = event.changes.count { it.pressed }
-                            val allowGesture = pointerCount > 1 || scale > 1f
-
-                            if (allowGesture) {
-                                if (!pastSlop) {
-                                    accumPan += panChange
-                                    val centroidSize = event.calculateCentroidSize(useCurrent = false)
-                                    val zoomMotion = kotlin.math.abs(1f - zoomChange) * centroidSize
-                                    val panMotion = accumPan.getDistance()
-                                    if (zoomMotion > touchSlop || panMotion > touchSlop) {
-                                        pastSlop = true
-                                    }
-                                }
-                                if (pastSlop) {
-                                    val newScale = (scale * zoomChange).coerceIn(1f, MAX_ZOOM)
-                                    val (maxX, maxY) = maxOffsets(size, newScale)
-                                    scale = newScale
-                                    offsetX = (offsetX + panChange.x).coerceIn(-maxX, maxX)
-                                    offsetY = (offsetY + panChange.y).coerceIn(-maxY, maxY)
-                                    event.changes.forEach { change ->
-                                        if (change.positionChanged()) {
-                                            // Registra a velocidade do arraste pra poder "arremessar"
-                                            // a imagem com inércia ao soltar o dedo (fling), em vez de
-                                            // parar seco — é o que dá a sensação de leveza ao arrastar
-                                            // uma imagem ampliada, tipo Google Fotos.
-                                            velocityTracker.addPosition(change.uptimeMillis, change.position)
-                                            change.consume()
-                                        }
-                                    }
-                                }
-                            }
-                        } while (event.changes.any { it.pressed })
-
-                        if (pastSlop && scale < ZOOM_SNAP_BACK_THRESHOLD) {
-                            // Se soltar perto de 1x (pinça quase fechada), volta suavemente ao normal.
-                            animateTo(1f, 0f, 0f)
-                        } else if (pastSlop && scale > 1f) {
-                            // Continua o arraste com inércia, desacelerando aos poucos, até bater
-                            // no limite da imagem ou perder toda a velocidade.
-                            val velocity = velocityTracker.calculateVelocity()
-                            val (maxX, maxY) = maxOffsets(size, scale)
-                            scope.launch {
-                                launch {
-                                    AnimationState(initialValue = offsetX, initialVelocity = velocity.x)
-                                        .animateDecay(splineBasedDecay(density)) {
-                                            offsetX = value.coerceIn(-maxX, maxX)
-                                            if (value < -maxX || value > maxX) cancelAnimation()
-                                        }
-                                }
-                                launch {
-                                    AnimationState(initialValue = offsetY, initialVelocity = velocity.y)
-                                        .animateDecay(splineBasedDecay(density)) {
-                                            offsetY = value.coerceIn(-maxY, maxY)
-                                            if (value < -maxY || value > maxY) cancelAnimation()
-                                        }
-                                }
-                            }
-                        }
-                    }
-                }
-        )
-    }
+    val context = LocalContext.current
+    ZoomableAsyncImage(
+        model = ImageRequest.Builder(context)
+            .data(Uri.parse(uriStr))
+            .crossfade(200)
+            .build(),
+        contentDescription = null,
+        modifier = Modifier.fillMaxSize(),
+        onClick = { onTap() }
+    )
 }

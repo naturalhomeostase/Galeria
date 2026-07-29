@@ -1,6 +1,8 @@
 package com.galeria.ui.navigation
 
 import android.net.Uri
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -64,7 +66,16 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
         }
     ) { padding ->
         Column(modifier = androidx.compose.ui.Modifier.padding(padding)) {
-            NavHost(navController = navController, startDestination = GaleriaTab.ALBUNS.route) {
+            NavHost(
+                navController = navController,
+                startDestination = GaleriaTab.ALBUNS.route,
+                // Desativa qualquer animação de transição entre telas (o "tremelique" ao abrir
+                // um álbum, por exemplo). Num app de galeria, trocar de tela deve ser instantâneo.
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { ExitTransition.None }
+            ) {
 
                 composable(GaleriaTab.FOTOS.route) {
                     HomeScreen(viewModel = viewModel) { uris, index ->

@@ -91,6 +91,11 @@ dependencies {
 
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("io.coil-kt:coil-video:2.6.0")
+    // Telephoto: biblioteca open source específica para zoom por pinça + arraste fluido de
+    // imagens dentro de um pager (https://github.com/saket/telephoto). Troquei minha
+    // implementação de zoom feita na mão por essa, já testada por muita gente nesse exato
+    // cenário — bem mais confiável do que eu tentando reescrever isso do zero.
+    implementation("me.saket.telephoto:zoomable-image-coil:0.13.0")
 
     implementation("androidx.media3:media3-exoplayer:1.3.1")
     implementation("androidx.media3:media3-ui:1.3.1")

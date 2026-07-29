@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -66,9 +65,9 @@ fun SelectionActionBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             ActionBarItem(Icons.Filled.Star, "Favoritar", onFavorite)
-            ActionBarItem(Icons.Filled.ContentCopy, "Copiar p/ álbum", onCopyToAlbum)
+            ActionBarItem(Icons.Filled.ContentCopy, "Copiar", onCopyToAlbum)
             if (onMoveToAlbum != null) {
-                ActionBarItem(Icons.Filled.DriveFileMove, "Mover p/ álbum", onMoveToAlbum)
+                ActionBarItem(Icons.Filled.DriveFileMove, "Mover", onMoveToAlbum)
             }
             ActionBarItem(Icons.Filled.Share, "Compartilhar", onShare)
             ActionBarItem(Icons.Filled.Delete, "Lixeira", onDelete)
@@ -80,7 +79,7 @@ fun SelectionActionBar(
 private fun ActionBarItem(icon: ImageVector, label: String, onClick: () -> Unit) {
     Column(
         modifier = Modifier
-            .widthIn(min = 60.dp)
+            .width(72.dp)
             .padding(horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -92,7 +91,13 @@ private fun ActionBarItem(icon: ImageVector, label: String, onClick: () -> Unit)
             fontSize = 10.sp,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(64.dp)
+            // Antes o texto quebrava no meio da palavra sem limite de linhas (ex.: "Compartilha"
+            // numa linha e só o "r" sobrando sozinho na linha de baixo). Forçar 1 linha com "..."
+            // como saída garante que isso nunca aconteça, mesmo com fontes maiores do sistema.
+            maxLines = 1,
+            softWrap = false,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }

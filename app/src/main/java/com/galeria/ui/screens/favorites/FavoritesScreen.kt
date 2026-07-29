@@ -57,7 +57,12 @@ fun FavoritesScreen(
         selected.value = emptySet()
     }
 
-    val bulkDelete = rememberBulkDeleteAction(onCompleted = { exitSelection() })
+    val bulkDelete = rememberBulkDeleteAction(onCompleted = {
+        exitSelection()
+        // Sem isso, a foto/vídeo continuava aparecendo na grade depois de excluído --
+        // a lista em memória só era recarregada ao reabrir o app.
+        viewModel.loadPhotos()
+    })
 
     Scaffold(
         topBar = { CenterAlignedTopAppBar(title = { Text("Favoritos") }) }

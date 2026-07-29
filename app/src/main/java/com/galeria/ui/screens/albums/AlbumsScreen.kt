@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -74,6 +75,7 @@ fun AlbumsScreen(
     onOpenSettings: () -> Unit
 ) {
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
+    val isLoadingPhotos by viewModel.isLoadingPhotos.collectAsState()
     val deviceFolders by viewModel.deviceFolders.collectAsState()
     val showHidden by viewModel.showHiddenAlbums.collectAsState()
     val sortOption by viewModel.albumSortOption.collectAsState()
@@ -205,7 +207,15 @@ fun AlbumsScreen(
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-            if (visibleAlbums.isEmpty() && normalFolders.isEmpty() && systemHiddenFolders.isEmpty()) {
+            if (isLoadingPhotos && visibleAlbums.isEmpty() && normalFolders.isEmpty() && systemHiddenFolders.isEmpty()) {
+                // Enquanto a primeira consulta ao MediaStore ainda está em andamento, mostra um
+                // indicador de carregamento em vez da mensagem de "nenhum álbum ainda" — antes,
+                // essa mensagem aparecia rapidamente e sumia assim que os dados chegavam, dando
+                // a impressão de um piscar estranho toda vez que a tela abria.
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else if (visibleAlbums.isEmpty() && normalFolders.isEmpty() && systemHiddenFolders.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("Nenhum álbum ainda. Toque em + para criar.")
                 }
