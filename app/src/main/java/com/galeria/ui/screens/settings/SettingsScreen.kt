@@ -118,8 +118,14 @@ fun SettingsScreen(
 
             item {
                 ListItem(
-                    headlineContent = { Text("Mostrar álbuns e pastas ocultas") },
-                    supportingContent = { Text("Exibe, marcados com um ícone, os álbuns e pastas que você ocultou") },
+                    headlineContent = { Text("Mostrar álbuns e pastas que você ocultou") },
+                    supportingContent = {
+                        Text(
+                            "Reexibe, marcados com um ícone, os álbuns e pastas que você mesmo " +
+                                "escolheu ocultar dentro do app. Não tem relação com pastas com " +
+                                "arquivo .nomedia — pra essas, use \"Adicionar pasta oculta\" mais abaixo."
+                        )
+                    },
                     trailingContent = {
                         Switch(checked = showHidden, onCheckedChange = { viewModel.setShowHiddenAlbums(it) })
                     }

@@ -62,7 +62,7 @@ fun AlbumDetailScreen(
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
     val stats = albumsWithStats.firstOrNull { it.album.id == albumId }
     val favorites by viewModel.favoriteUris.collectAsState()
-    val sortOption by viewModel.photoSortOption.collectAsState()
+    var sortOption by remember(albumId) { mutableStateOf(viewModel.getPhotoSortOptionFor("album_$albumId")) }
     var menuOpen by remember { mutableStateOf(false) }
     var sortMenuOpen by remember { mutableStateOf(false) }
     var selectionMode by remember { mutableStateOf(false) }
@@ -116,7 +116,8 @@ fun AlbumDetailScreen(
                                 DropdownMenuItem(
                                     text = { Text(option.label) },
                                     onClick = {
-                                        viewModel.setPhotoSortOption(option)
+                                        sortOption = option
+                                        viewModel.setPhotoSortOptionFor("album_$albumId", option)
                                         sortMenuOpen = false
                                     }
                                 )

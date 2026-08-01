@@ -114,18 +114,20 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         prefs.edit().putString("album_sort_option", option.name).apply()
     }
 
-    private val _photoSortOption = MutableStateFlow(
-        try {
-            PhotoSortOption.valueOf(prefs.getString("photo_sort_option", PhotoSortOption.RECENTE.name) ?: PhotoSortOption.RECENTE.name)
+    // Ordem de exibição das fotos, agora por álbum/pasta em vez de uma única preferência
+    // global — cada tela (álbum criado ou pasta do dispositivo) passa sua própria scopeKey
+    // (ex.: "album_42" ou "folder_Camera") e guarda/lê a escolha só daquele escopo.
+    fun getPhotoSortOptionFor(scopeKey: String): PhotoSortOption {
+        val stored = prefs.getString("photo_sort_option_$scopeKey", null) ?: return PhotoSortOption.RECENTE
+        return try {
+            PhotoSortOption.valueOf(stored)
         } catch (_: IllegalArgumentException) {
             PhotoSortOption.RECENTE
         }
-    )
-    val photoSortOption: StateFlow<PhotoSortOption> = _photoSortOption
+    }
 
-    fun setPhotoSortOption(option: PhotoSortOption) {
-        _photoSortOption.value = option
-        prefs.edit().putString("photo_sort_option", option.name).apply()
+    fun setPhotoSortOptionFor(scopeKey: String, option: PhotoSortOption) {
+        prefs.edit().putString("photo_sort_option_$scopeKey", option.name).apply()
     }
 
     val favoriteUris: StateFlow<Set<String>> = app.favoriteRepository.getFavoriteUris()

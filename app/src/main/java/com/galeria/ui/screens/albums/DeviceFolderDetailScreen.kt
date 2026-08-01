@@ -57,7 +57,7 @@ fun DeviceFolderDetailScreen(
     val allPhotos by viewModel.allPhotos.collectAsState()
     val favorites by viewModel.favoriteUris.collectAsState()
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
-    val sortOption by viewModel.photoSortOption.collectAsState()
+    var sortOption by remember(folderName) { mutableStateOf(viewModel.getPhotoSortOptionFor("folder_$folderName")) }
     val gridState = rememberLazyGridState()
     val photos = remember(allPhotos, folderName) { allPhotos.filter { it.bucketName == folderName } }
 
@@ -109,7 +109,8 @@ fun DeviceFolderDetailScreen(
                                 DropdownMenuItem(
                                     text = { Text(option.label) },
                                     onClick = {
-                                        viewModel.setPhotoSortOption(option)
+                                        sortOption = option
+                                        viewModel.setPhotoSortOptionFor("folder_$folderName", option)
                                         sortMenuOpen = false
                                     }
                                 )

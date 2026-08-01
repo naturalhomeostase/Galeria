@@ -65,6 +65,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -118,11 +119,18 @@ fun PhotoViewerScreen(
 ) {
     val context = LocalContext.current
     val view = LocalView.current
+    val scope = rememberCoroutineScope()
     val favorites by viewModel.favoriteUris.collectAsState()
-    val pagerState = rememberPagerState(initialPage = startIndex.coerceIn(0, max(uris.size - 1, 0))) { uris.size }
+    // Cópia local e mutável da lista recebida: ao excluir uma foto removemos ela daqui na
+    // hora (o app.mediaStoreRepository/_allPhotos do ViewModel só é atualizado de forma
+    // assíncrona via loadPhotos(), então depender dele pra decidir o que mostrar em seguida
+    // deixava o visualizador momentaneamente mostrando a foto já excluída).
+    val localUris = remember(uris) { mutableStateListOf(*uris.toTypedArray()) }
+    val pagerState = rememberPagerState(initialPage = startIndex.coerceIn(0, max(uris.size - 1, 0))) { localUris.size }
     var showInfo by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var chromeVisible by remember { mutableStateOf(true) }
+    var pendingDeleteUri by remember { mutableStateOf<String?>(null) }
 
     // Modo imersivo: some com a barra de status/navegação enquanto o visualizador está aberto
     DisposableEffect(Unit) {
@@ -136,17 +144,38 @@ fun PhotoViewerScreen(
         }
     }
 
-    val currentUri = uris.getOrNull(pagerState.currentPage)
+    // Remove a foto/vídeo excluído da lista local e pula pra próxima página (ou volta pro
+    // álbum se não sobrar nada). Também dispara loadPhotos() em segundo plano pra sincronizar
+    // o restante do app (grades de álbuns etc.) com a exclusão.
+    fun removeUriAndAdvance(uriString: String) {
+        val idx = localUris.indexOf(uriString)
+        if (idx >= 0) localUris.removeAt(idx)
+        viewModel.loadPhotos()
+        if (localUris.isEmpty()) {
+            onBack()
+        } else {
+            val target = idx.coerceIn(0, localUris.size - 1)
+            scope.launch { pagerState.scrollToPage(target) }
+        }
+    }
+
+    val currentUri = localUris.getOrNull(pagerState.currentPage)
     val currentPhoto = currentUri?.let { viewModel.getPhotoByUri(it) }
     val isCurrentVideo = currentPhoto?.isVideo == true
 
     val deleteLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
-    ) { onBack() }
+    ) { result ->
+        val deletedUri = pendingDeleteUri
+        pendingDeleteUri = null
+        if (result.resultCode == Activity.RESULT_OK && deletedUri != null) {
+            removeUriAndAdvance(deletedUri)
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-            val uriStr = uris.getOrNull(page) ?: return@HorizontalPager
+            val uriStr = localUris.getOrNull(page) ?: return@HorizontalPager
             val photo = viewModel.getPhotoByUri(uriStr)
             if (photo?.isVideo == true) {
                 VideoPage(
@@ -261,20 +290,21 @@ fun PhotoViewerScreen(
                     currentUri?.let { uriString ->
                         val uri = Uri.parse(uriString)
                         if (uri.authority == "media" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            pendingDeleteUri = uriString
                             val pendingIntent = MediaStore.createDeleteRequest(context.contentResolver, listOf(uri))
                             deleteLauncher.launch(IntentSenderRequest.Builder(pendingIntent.intentSender).build())
                         } else if (uri.authority == "media") {
                             try {
                                 context.contentResolver.delete(uri, null, null)
+                                removeUriAndAdvance(uriString)
                             } catch (_: SecurityException) {
                             }
-                            onBack()
                         } else {
                             try {
                                 android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri)
+                                removeUriAndAdvance(uriString)
                             } catch (_: Exception) {
                             }
-                            onBack()
                         }
                     }
                 }) { Text("Excluir") }
