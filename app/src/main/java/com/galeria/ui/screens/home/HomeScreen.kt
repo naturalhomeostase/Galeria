@@ -31,11 +31,13 @@ import androidx.compose.ui.unit.dp
 import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.components.AlbumPickerDialog
 import com.galeria.ui.components.MonthHeader
+import com.galeria.ui.components.MoveToDeviceFolderDialog
 import com.galeria.ui.components.PhotoGridItem
 import com.galeria.ui.components.SelectionActionBar
 import com.galeria.ui.components.SimpleVerticalScrollbar
 import com.galeria.ui.screens.albums.CreateAlbumDialog
 import com.galeria.util.rememberBulkDeleteAction
+import com.galeria.util.rememberMoveToFolderAction
 import com.galeria.util.shareMultiplePhotos
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,10 +51,12 @@ fun HomeScreen(
     val favorites by viewModel.favoriteUris.collectAsState()
     val isLoading by viewModel.isLoadingPhotos.collectAsState()
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
+    val deviceFolders by viewModel.deviceFolders.collectAsState()
     var selectionMode by remember { mutableStateOf(false) }
     val selected = remember { mutableStateOf(setOf<String>()) }
     var showCopyDialog by remember { mutableStateOf(false) }
     var showCreateForCopy by remember { mutableStateOf(false) }
+    var showMoveToFolderDialog by remember { mutableStateOf(false) }
 
     val allUris = remember(groups) { groups.flatMap { g -> g.photos.map { it.uri.toString() } } }
     val gridState = rememberLazyGridState()
@@ -67,6 +71,17 @@ fun HomeScreen(
         // Sem isso, a foto/vídeo continuava aparecendo na grade depois de excluído --
         // a lista em memória só era recarregada ao reabrir o app.
         viewModel.loadPhotos()
+    })
+
+    val moveToFolder = rememberMoveToFolderAction(viewModel = viewModel, onCompleted = { failures ->
+        exitSelection()
+        if (failures > 0) {
+            android.widget.Toast.makeText(
+                context,
+                if (failures == 1) "1 item não pôde ser movido" else "$failures itens não puderam ser movidos",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
     })
 
     Scaffold(
@@ -131,7 +146,8 @@ fun HomeScreen(
                     },
                     onShare = { shareMultiplePhotos(context, selected.value.toList()) },
                     onDelete = { bulkDelete(selected.value.toList()) },
-                    onCopyToAlbum = { showCopyDialog = true }
+                    onCopyToAlbum = { showCopyDialog = true },
+                    onMoveToDeviceFolder = { showMoveToFolderDialog = true }
                 )
             }
         }
@@ -163,6 +179,17 @@ fun HomeScreen(
                     viewModel.addPhotosToAlbum(newId, selected.value)
                     exitSelection()
                 }
+            }
+        )
+    }
+
+    if (showMoveToFolderDialog) {
+        MoveToDeviceFolderDialog(
+            existingFolderNames = deviceFolders.map { it.name },
+            onDismiss = { showMoveToFolderDialog = false },
+            onConfirm = { targetFolder ->
+                showMoveToFolderDialog = false
+                moveToFolder(selected.value.toList(), targetFolder)
             }
         )
     }

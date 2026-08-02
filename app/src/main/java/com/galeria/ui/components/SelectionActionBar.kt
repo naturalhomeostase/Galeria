@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
@@ -44,7 +45,8 @@ fun SelectionActionBar(
     onShare: () -> Unit,
     onDelete: () -> Unit,
     onCopyToAlbum: () -> Unit,
-    onMoveToAlbum: (() -> Unit)? = null
+    onMoveToAlbum: (() -> Unit)? = null,
+    onMoveToDeviceFolder: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -69,6 +71,7 @@ fun SelectionActionBar(
             if (onMoveToAlbum != null) {
                 ActionBarItem(Icons.Filled.DriveFileMove, "Mover", onMoveToAlbum)
             }
+            ActionBarItem(Icons.Filled.Folder, "Pasta", onMoveToDeviceFolder)
             ActionBarItem(Icons.Filled.Share, "Compartilhar", onShare)
             ActionBarItem(Icons.Filled.Delete, "Lixeira", onDelete)
         }

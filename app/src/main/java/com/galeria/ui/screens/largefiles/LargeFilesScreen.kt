@@ -31,12 +31,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.components.AlbumPickerDialog
+import com.galeria.ui.components.MoveToDeviceFolderDialog
 import com.galeria.ui.components.PhotoGridItem
 import com.galeria.ui.components.SelectionActionBar
 import com.galeria.ui.components.SimpleVerticalScrollbar
 import com.galeria.ui.screens.albums.CreateAlbumDialog
 import com.galeria.util.FileUtils
 import com.galeria.util.rememberBulkDeleteAction
+import com.galeria.util.rememberMoveToFolderAction
 import com.galeria.util.shareMultiplePhotos
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -50,6 +52,7 @@ fun LargeFilesScreen(
     val allPhotos by viewModel.allPhotos.collectAsState()
     val favorites by viewModel.favoriteUris.collectAsState()
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
+    val deviceFolders by viewModel.deviceFolders.collectAsState()
 
     val sortedPhotos = remember(allPhotos) { allPhotos.sortedByDescending { it.sizeBytes } }
     val allUris = remember(sortedPhotos) { sortedPhotos.map { it.uri.toString() } }
@@ -58,6 +61,7 @@ fun LargeFilesScreen(
     val selected = remember { mutableStateOf(setOf<String>()) }
     var showCopyDialog by remember { mutableStateOf(false) }
     var showCreateForCopy by remember { mutableStateOf(false) }
+    var showMoveToFolderDialog by remember { mutableStateOf(false) }
     val gridState = rememberLazyGridState()
 
     fun exitSelection() {
@@ -70,6 +74,17 @@ fun LargeFilesScreen(
         // Sem isso, a foto/vídeo continuava aparecendo na grade depois de excluído --
         // a lista em memória só era recarregada ao reabrir o app.
         viewModel.loadPhotos()
+    })
+
+    val moveToFolder = rememberMoveToFolderAction(viewModel = viewModel, onCompleted = { failures ->
+        exitSelection()
+        if (failures > 0) {
+            android.widget.Toast.makeText(
+                context,
+                if (failures == 1) "1 item não pôde ser movido" else "$failures itens não puderam ser movidos",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
     })
 
     Scaffold(
@@ -135,7 +150,8 @@ fun LargeFilesScreen(
                     },
                     onShare = { shareMultiplePhotos(context, selected.value.toList()) },
                     onDelete = { bulkDelete(selected.value.toList()) },
-                    onCopyToAlbum = { showCopyDialog = true }
+                    onCopyToAlbum = { showCopyDialog = true },
+                    onMoveToDeviceFolder = { showMoveToFolderDialog = true }
                 )
             }
         }
@@ -167,6 +183,17 @@ fun LargeFilesScreen(
                     viewModel.addPhotosToAlbum(newId, selected.value)
                     exitSelection()
                 }
+            }
+        )
+    }
+
+    if (showMoveToFolderDialog) {
+        MoveToDeviceFolderDialog(
+            existingFolderNames = deviceFolders.map { it.name },
+            onDismiss = { showMoveToFolderDialog = false },
+            onConfirm = { targetFolder ->
+                showMoveToFolderDialog = false
+                moveToFolder(selected.value.toList(), targetFolder)
             }
         )
     }

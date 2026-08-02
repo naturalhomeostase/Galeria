@@ -1,9 +1,14 @@
 package com.galeria.ui
 
 import android.app.Application
+import android.app.PendingIntent
+import android.content.ContentValues
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.galeria.GaleriaApplication
@@ -12,6 +17,7 @@ import com.galeria.data.model.Photo
 import com.galeria.data.model.SafFolderEntity
 import com.galeria.util.DateUtils
 import com.galeria.util.SafUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +26,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class MonthGroup(val key: String, val label: String, val photos: List<Photo>)
 
@@ -318,6 +325,73 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     suspend fun setBiometricEnabled(enabled: Boolean) =
         app.securityRepository.setBiometricEnabled(enabled)
+
+    // --- "Mover para pasta" (mover o arquivo de verdade no disco, tipo o Google Fotos) ---
+    //
+    // Isso é bem diferente do "Mover para álbum" que já existe: aqui a gente muda de fato o
+    // caminho físico do arquivo (RELATIVE_PATH no MediaStore), então some da pasta de origem
+    // de verdade — não é só uma marcação virtual como os álbuns do app.
+
+    /**
+     * Descobre o RELATIVE_PATH a ser usado. Se já existe uma pasta do dispositivo com esse
+     * nome, reaproveita o caminho exato dela (assim o arquivo se junta à pasta certa, seja
+     * ela DCIM/Camera, Pictures/Screenshots etc.). Se for uma pasta nova, cria embaixo de
+     * Pictures (fotos) ou Movies (vídeos), que é onde o Android permite criar pastas novas
+     * pelo MediaStore sem pedir mais permissões.
+     */
+    fun resolveTargetRelativePath(targetFolderName: String, isVideo: Boolean): String {
+        val existingSample = _allPhotos.value.firstOrNull { it.bucketName == targetFolderName }
+        if (existingSample != null) {
+            val root = Environment.getExternalStorageDirectory().absolutePath
+            val withoutRoot = existingSample.path.removePrefix(root).trimStart('/')
+            val dir = withoutRoot.substringBeforeLast('/', missingDelimiterValue = "")
+            if (dir.isNotBlank()) return "$dir/"
+        }
+        val base = if (isVideo) "Movies" else "Pictures"
+        return "$base/$targetFolderName/"
+    }
+
+    /**
+     * No Android 11+ (API 30+), o app precisa pedir permissão de escrita pro lote inteiro de
+     * uma vez antes de tentar mudar o caminho de qualquer item que ele não seja o "dono"
+     * (ex.: fotos tiradas pela câmera do sistema). Retorna null em versões mais antigas ou se
+     * o app já tiver permissão de sobra.
+     */
+    fun buildMoveWriteRequest(uriStrings: List<String>): PendingIntent? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        val uris = uriStrings.map { Uri.parse(it) }
+        return try {
+            MediaStore.createWriteRequest(getApplication<Application>().contentResolver, uris)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Aplica a mudança de pasta em cada item (assumindo que a permissão de escrita, quando
+     * necessária, já foi concedida). Retorna a quantidade de itens que falharam — 0 significa
+     * que deu tudo certo.
+     */
+    suspend fun applyMoveToFolder(uriStrings: List<String>, targetFolderName: String): Int =
+        withContext(Dispatchers.IO) {
+            var failures = 0
+            val resolver = getApplication<Application>().contentResolver
+            uriStrings.forEach { uriString ->
+                val photo = getPhotoByUri(uriString)
+                val relativePath = resolveTargetRelativePath(targetFolderName, photo?.isVideo == true)
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                }
+                try {
+                    val updated = resolver.update(Uri.parse(uriString), values, null, null)
+                    if (updated <= 0) failures++
+                } catch (_: Exception) {
+                    failures++
+                }
+            }
+            loadPhotos()
+            failures
+        }
 }
 
 fun groupPhotosByMonthUtil(photos: List<Photo>, descending: Boolean = true): List<MonthGroup> {

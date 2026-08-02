@@ -41,12 +41,14 @@ import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.PhotoSortOption
 import com.galeria.ui.components.AlbumPickerDialog
 import com.galeria.ui.components.MonthHeader
+import com.galeria.ui.components.MoveToDeviceFolderDialog
 import com.galeria.ui.components.PhotoGridItem
 import com.galeria.ui.components.SelectionActionBar
 import com.galeria.ui.components.SimpleVerticalScrollbar
 import com.galeria.ui.groupPhotosByMonthUtil
 import com.galeria.ui.sortPhotos
 import com.galeria.util.rememberBulkDeleteAction
+import com.galeria.util.rememberMoveToFolderAction
 import com.galeria.util.shareMultiplePhotos
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,6 +62,7 @@ fun AlbumDetailScreen(
 ) {
     val context = LocalContext.current
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
+    val deviceFolders by viewModel.deviceFolders.collectAsState()
     val stats = albumsWithStats.firstOrNull { it.album.id == albumId }
     val favorites by viewModel.favoriteUris.collectAsState()
     var sortOption by remember(albumId) { mutableStateOf(viewModel.getPhotoSortOptionFor("album_$albumId")) }
@@ -72,6 +75,7 @@ fun AlbumDetailScreen(
     var showMoveDialog by remember { mutableStateOf(false) }
     var showCreateForCopy by remember { mutableStateOf(false) }
     var showCreateForMove by remember { mutableStateOf(false) }
+    var showMoveToFolderDialog by remember { mutableStateOf(false) }
 
     val photos = remember(stats) { stats?.let { viewModel.resolvePhotos(it.photoUris) } ?: emptyList() }
     val isDateSort = sortOption == PhotoSortOption.RECENTE || sortOption == PhotoSortOption.ANTIGA
@@ -95,6 +99,17 @@ fun AlbumDetailScreen(
         // Sem isso, a foto/vídeo continuava aparecendo na grade depois de excluído --
         // a lista em memória só era recarregada ao reabrir o app.
         viewModel.loadPhotos()
+    })
+
+    val moveToFolder = rememberMoveToFolderAction(viewModel = viewModel, onCompleted = { failures ->
+        exitSelection()
+        if (failures > 0) {
+            android.widget.Toast.makeText(
+                context,
+                if (failures == 1) "1 item não pôde ser movido" else "$failures itens não puderam ser movidos",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
     })
 
     Scaffold(
@@ -231,7 +246,8 @@ fun AlbumDetailScreen(
                     },
                     onDelete = { bulkDelete(selected.value.toList()) },
                     onCopyToAlbum = { showCopyDialog = true },
-                    onMoveToAlbum = { showMoveDialog = true }
+                    onMoveToAlbum = { showMoveDialog = true },
+                    onMoveToDeviceFolder = { showMoveToFolderDialog = true }
                 )
             }
         }
@@ -295,6 +311,17 @@ fun AlbumDetailScreen(
                     viewModel.removePhotosFromAlbum(albumId, selected.value)
                     exitSelection()
                 }
+            }
+        )
+    }
+
+    if (showMoveToFolderDialog) {
+        MoveToDeviceFolderDialog(
+            existingFolderNames = deviceFolders.map { it.name },
+            onDismiss = { showMoveToFolderDialog = false },
+            onConfirm = { targetFolder ->
+                showMoveToFolderDialog = false
+                moveToFolder(selected.value.toList(), targetFolder)
             }
         )
     }
