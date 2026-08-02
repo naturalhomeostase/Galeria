@@ -1,5 +1,7 @@
 package com.galeria.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,11 +30,20 @@ enum class GaleriaTab(val route: String, val label: String) {
 }
 
 @Composable
-fun GaleriaBottomBar(currentRoute: String?, onSelect: (GaleriaTab) -> Unit) {
+fun GaleriaBottomBar(currentRoute: String?, opaque: Boolean = true, onSelect: (GaleriaTab) -> Unit) {
+    // Anima suavemente entre opaca (0.88f, como sempre foi) e quase transparente ao rolar as
+    // fotos/álbuns pra baixo — 0.06f em vez de 0f pra barra continuar minimamente visível e
+    // "tocável" mesmo transparente, em vez de sumir por completo.
+    val alpha by animateFloatAsState(
+        targetValue = if (opaque) 0.88f else 0.06f,
+        animationSpec = tween(durationMillis = 200),
+        label = "bottomBarAlpha"
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = alpha))
             .padding(horizontal = 20.dp, vertical = 6.dp)
             .height(58.dp),
         horizontalArrangement = Arrangement.SpaceEvenly

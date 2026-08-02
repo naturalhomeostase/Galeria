@@ -65,6 +65,7 @@ import com.galeria.ui.components.SimpleVerticalScrollbar
 import com.galeria.ui.sortAlbums
 import com.galeria.ui.sortDeviceFolders
 import com.galeria.util.FileUtils
+import com.galeria.util.ObserveGridScrollForBottomBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,6 +83,7 @@ fun AlbumsScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var sortMenuOpen by remember { mutableStateOf(false) }
     val gridState = rememberLazyGridState()
+    ObserveGridScrollForBottomBar(gridState = gridState, viewModel = viewModel)
 
     var selectionMode by remember { mutableStateOf(false) }
     var selectedAlbumIds by remember { mutableStateOf(setOf<Long>()) }

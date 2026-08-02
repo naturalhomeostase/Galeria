@@ -33,6 +33,7 @@ import com.galeria.ui.screens.albums.CreateAlbumDialog
 import com.galeria.util.rememberBulkDeleteAction
 import com.galeria.util.rememberMoveToFolderAction
 import com.galeria.util.shareMultiplePhotos
+import com.galeria.util.ObserveGridScrollForBottomBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +50,7 @@ fun FavoritesScreen(
         allPhotos.filter { favorites.contains(it.uri.toString()) }
     }
     val gridState = rememberLazyGridState()
+    ObserveGridScrollForBottomBar(gridState = gridState, viewModel = viewModel)
 
     var selectionMode by remember { mutableStateOf(false) }
     val selected = remember { mutableStateOf(setOf<String>()) }

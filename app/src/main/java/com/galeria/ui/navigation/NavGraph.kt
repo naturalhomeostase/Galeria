@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,13 +50,15 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
         currentRoute == GaleriaTab.ALBUNS.route ||
         currentRoute == GaleriaTab.FAVORITOS.route
 
+    val bottomBarOpaque by viewModel.bottomBarOpaque.collectAsState()
+
     // Shared holder for the photo list currently being viewed in the pager
     var viewerUris by remember { mutableStateOf(listOf<String>()) }
 
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
-                GaleriaBottomBar(currentRoute = currentRoute) { tab ->
+                GaleriaBottomBar(currentRoute = currentRoute, opaque = bottomBarOpaque) { tab ->
                     navController.navigate(tab.route) {
                         popUpTo(GaleriaTab.ALBUNS.route) { saveState = true }
                         launchSingleTop = true

@@ -200,6 +200,17 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private fun groupPhotosByMonth(photos: List<Photo>): List<MonthGroup> =
         groupPhotosByMonthUtil(photos)
 
+    // Estado transitório (não persiste) da opacidade da barra de baixo: fica transparente
+    // enquanto o usuário rola pra baixo dentro da grade (Fotos/Álbuns/Favoritos) e volta a
+    // ficar opaca ao rolar de volta pra cima ou ao chegar no topo. Quem atualiza isso é o
+    // ObserveGridScrollForBottomBar, chamado de dentro de cada uma dessas 3 telas.
+    private val _bottomBarOpaque = MutableStateFlow(true)
+    val bottomBarOpaque: StateFlow<Boolean> = _bottomBarOpaque
+
+    fun setBottomBarOpaque(opaque: Boolean) {
+        if (_bottomBarOpaque.value != opaque) _bottomBarOpaque.value = opaque
+    }
+
     fun onPermissionGranted() {
         _hasPermission.value = true
         loadPhotos()

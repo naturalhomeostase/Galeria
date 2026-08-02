@@ -39,6 +39,7 @@ import com.galeria.ui.screens.albums.CreateAlbumDialog
 import com.galeria.util.rememberBulkDeleteAction
 import com.galeria.util.rememberMoveToFolderAction
 import com.galeria.util.shareMultiplePhotos
+import com.galeria.util.ObserveGridScrollForBottomBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,6 +61,7 @@ fun HomeScreen(
 
     val allUris = remember(groups) { groups.flatMap { g -> g.photos.map { it.uri.toString() } } }
     val gridState = rememberLazyGridState()
+    ObserveGridScrollForBottomBar(gridState = gridState, viewModel = viewModel)
 
     fun exitSelection() {
         selectionMode = false
