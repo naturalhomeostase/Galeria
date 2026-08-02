@@ -40,6 +40,8 @@ import com.galeria.util.rememberBulkDeleteAction
 import com.galeria.util.rememberMoveToFolderAction
 import com.galeria.util.shareMultiplePhotos
 import com.galeria.util.ObserveGridScrollForBottomBar
+import com.galeria.ui.components.GaleriaBottomBarHeight
+import androidx.compose.foundation.layout.PaddingValues
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +51,7 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val groups by viewModel.monthGroups.collectAsState()
+    val gridColumns by viewModel.photoGridColumns.collectAsState()
     val favorites by viewModel.favoriteUris.collectAsState()
     val isLoading by viewModel.isLoadingPhotos.collectAsState()
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
@@ -101,9 +104,10 @@ fun HomeScreen(
                     else -> {
                         LazyVerticalGrid(
                             state = gridState,
-                            columns = GridCells.Fixed(3),
+                            columns = GridCells.Fixed(gridColumns),
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                             verticalArrangement = Arrangement.spacedBy(2.dp),
+                            contentPadding = PaddingValues(bottom = GaleriaBottomBarHeight + 24.dp),
                             modifier = Modifier.padding(horizontal = 2.dp)
                         ) {
                             groups.forEach { group ->

@@ -33,6 +33,7 @@ fun AddPhotosToAlbumScreen(
     onDone: () -> Unit
 ) {
     val allPhotos by viewModel.allPhotos.collectAsState()
+    val gridColumns by viewModel.photoGridColumns.collectAsState()
     val favorites by viewModel.favoriteUris.collectAsState()
     val selected = remember { mutableStateOf(setOf<String>()) }
 
@@ -57,7 +58,7 @@ fun AddPhotosToAlbumScreen(
         }
     ) { padding ->
         LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
+            columns = GridCells.Fixed(gridColumns),
             contentPadding = padding,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),

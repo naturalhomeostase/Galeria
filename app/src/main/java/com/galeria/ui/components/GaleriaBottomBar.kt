@@ -7,9 +7,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PhotoAlbum
@@ -30,8 +33,19 @@ enum class GaleriaTab(val route: String, val label: String) {
     FAVORITOS("favorites", "Favoritos")
 }
 
+// Altura aproximada da barra (58dp de conteúdo + 6dp de padding em cima e embaixo), sem contar
+// o inset da barra de navegação do sistema -- usada pelas telas de Fotos/Álbuns/Favoritos pra
+// reservar espaço no final da grade e não deixar a última fileira de fotos escondida atrás da
+// barra quando ela estiver opaca.
+val GaleriaBottomBarHeight = 70.dp
+
 @Composable
-fun GaleriaBottomBar(currentRoute: String?, opaque: Boolean = true, onSelect: (GaleriaTab) -> Unit) {
+fun GaleriaBottomBar(
+    currentRoute: String?,
+    opaque: Boolean = true,
+    modifier: Modifier = Modifier,
+    onSelect: (GaleriaTab) -> Unit
+) {
     // Anima suavemente entre opaca (0.88f, como sempre foi) e quase transparente ao rolar as
     // fotos/álbuns pra baixo — 0.06f em vez de 0f pra barra continuar minimamente visível e
     // "tocável" mesmo transparente, em vez de sumir por completo.
@@ -42,9 +56,14 @@ fun GaleriaBottomBar(currentRoute: String?, opaque: Boolean = true, onSelect: (G
     )
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface.copy(alpha = alpha))
+            // Antes essa barra vivia dentro de um Scaffold que cuidava do respiro da barra de
+            // navegação do sistema sozinho. Agora que ela flutua livre por cima do conteúdo
+            // (pra esse mesmo conteúdo poder aparecer por trás dela), precisa pedir esse
+            // respiro na mão, senão fica colada/atrás dos botões de navegação do Android.
+            .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(horizontal = 20.dp, vertical = 6.dp)
             .height(58.dp),
         horizontalArrangement = Arrangement.SpaceEvenly

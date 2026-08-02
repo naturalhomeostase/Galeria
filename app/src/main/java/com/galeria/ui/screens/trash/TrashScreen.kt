@@ -54,6 +54,7 @@ fun TrashScreen(
     onBack: () -> Unit
 ) {
     val trashed by viewModel.trashedPhotos.collectAsState()
+    val gridColumns by viewModel.photoGridColumns.collectAsState()
     var photoToDelete by remember { mutableStateOf<Photo?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -89,7 +90,7 @@ fun TrashScreen(
                 }
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
+                    columns = GridCells.Fixed(gridColumns),
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                     modifier = Modifier.padding(horizontal = 2.dp)

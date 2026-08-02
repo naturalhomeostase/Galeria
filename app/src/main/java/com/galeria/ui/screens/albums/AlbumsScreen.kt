@@ -66,6 +66,8 @@ import com.galeria.ui.sortAlbums
 import com.galeria.ui.sortDeviceFolders
 import com.galeria.util.FileUtils
 import com.galeria.util.ObserveGridScrollForBottomBar
+import com.galeria.ui.components.GaleriaBottomBarHeight
+import androidx.compose.foundation.layout.PaddingValues
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -227,7 +229,12 @@ fun AlbumsScreen(
                     columns = GridCells.Fixed(2),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.padding(horizontal = 12.dp)
+                    contentPadding = PaddingValues(
+                        start = 12.dp,
+                        end = 12.dp,
+                        top = 12.dp,
+                        bottom = GaleriaBottomBarHeight + 24.dp
+                    )
                 ) {
                     if (visibleAlbums.isNotEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }) {

@@ -62,6 +62,7 @@ fun AlbumDetailScreen(
 ) {
     val context = LocalContext.current
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
+    val gridColumns by viewModel.photoGridColumns.collectAsState()
     val deviceFolders by viewModel.deviceFolders.collectAsState()
     val stats = albumsWithStats.firstOrNull { it.album.id == albumId }
     val favorites by viewModel.favoriteUris.collectAsState()
@@ -173,7 +174,7 @@ fun AlbumDetailScreen(
                 } else {
                     LazyVerticalGrid(
                         state = gridState,
-                        columns = GridCells.Fixed(3),
+                        columns = GridCells.Fixed(gridColumns),
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                         modifier = Modifier.padding(horizontal = 2.dp)

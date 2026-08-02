@@ -107,6 +107,18 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         prefs.edit().putString("theme_mode", mode.name).apply()
     }
 
+    // Quantidade de colunas da grade de fotos/álbuns, configurável em Ajustes. 3 é o valor
+    // que o app sempre usou (fixo no código antes), mantido como padrão pra não mudar a
+    // aparência de quem já usa o app sem querer.
+    private val _photoGridColumns = MutableStateFlow(prefs.getInt("photo_grid_columns", 3).coerceIn(2, 5))
+    val photoGridColumns: StateFlow<Int> = _photoGridColumns
+
+    fun setPhotoGridColumns(count: Int) {
+        val coerced = count.coerceIn(2, 5)
+        _photoGridColumns.value = coerced
+        prefs.edit().putInt("photo_grid_columns", coerced).apply()
+    }
+
     private val _albumSortOption = MutableStateFlow(
         try {
             AlbumSortOption.valueOf(prefs.getString("album_sort_option", AlbumSortOption.RECENTE.name) ?: AlbumSortOption.RECENTE.name)
@@ -331,6 +343,19 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     suspend fun verifySecretPassword(password: String): Boolean =
         app.securityRepository.verifyPassword(password)
+
+    // --- Limpar cache de miniaturas (Coil) ---
+    //
+    // Não apaga nenhuma foto/vídeo real -- só o cache de miniaturas que o Coil mantém em
+    // memória e em disco pra carregar a grade mais rápido. Ele se reconstrói sozinho conforme
+    // as telas são reabertas, então é seguro limpar a qualquer momento.
+    fun clearImageCache() {
+        val loader = coil.Coil.imageLoader(getApplication())
+        loader.memoryCache?.clear()
+        viewModelScope.launch(Dispatchers.IO) {
+            loader.diskCache?.clear()
+        }
+    }
 
     suspend fun isBiometricEnabled(): Boolean = app.securityRepository.isBiometricEnabled()
 

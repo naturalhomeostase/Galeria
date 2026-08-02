@@ -3,15 +3,16 @@ package com.galeria.ui.navigation
 import android.net.Uri
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -22,6 +23,7 @@ import androidx.navigation.navArgument
 import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.components.GaleriaBottomBar
 import com.galeria.ui.components.GaleriaTab
+import com.galeria.ui.screens.about.AboutScreen
 import com.galeria.ui.screens.albums.AddPhotosToAlbumScreen
 import com.galeria.ui.screens.albums.AlbumDetailScreen
 import com.galeria.ui.screens.albums.AlbumsScreen
@@ -55,48 +57,36 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
     // Shared holder for the photo list currently being viewed in the pager
     var viewerUris by remember { mutableStateOf(listOf<String>()) }
 
-    Scaffold(
-        bottomBar = {
-            if (showBottomBar) {
-                GaleriaBottomBar(currentRoute = currentRoute, opaque = bottomBarOpaque) { tab ->
-                    navController.navigate(tab.route) {
-                        popUpTo(GaleriaTab.ALBUNS.route) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        NavHost(
+            navController = navController,
+            startDestination = GaleriaTab.ALBUNS.route,
+            modifier = Modifier.fillMaxSize(),
+            // Desativa qualquer animação de transição entre telas (o "tremelique" ao abrir
+            // um álbum, por exemplo). Num app de galeria, trocar de tela deve ser instantâneo.
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None }
+        ) {
+
+            composable(GaleriaTab.FOTOS.route) {
+                HomeScreen(viewModel = viewModel) { uris, index ->
+                    viewerUris = uris
+                    navController.navigate("viewer/$index")
                 }
             }
-        }
-    ) { padding ->
-        Column(modifier = androidx.compose.ui.Modifier.padding(padding)) {
-            NavHost(
-                navController = navController,
-                startDestination = GaleriaTab.ALBUNS.route,
-                // Desativa qualquer animação de transição entre telas (o "tremelique" ao abrir
-                // um álbum, por exemplo). Num app de galeria, trocar de tela deve ser instantâneo.
-                enterTransition = { EnterTransition.None },
-                exitTransition = { ExitTransition.None },
-                popEnterTransition = { EnterTransition.None },
-                popExitTransition = { ExitTransition.None }
-            ) {
 
-                composable(GaleriaTab.FOTOS.route) {
-                    HomeScreen(viewModel = viewModel) { uris, index ->
-                        viewerUris = uris
-                        navController.navigate("viewer/$index")
-                    }
-                }
-
-                composable(GaleriaTab.ALBUNS.route) {
-                    AlbumsScreen(
-                        viewModel = viewModel,
-                        onOpenAlbum = { albumId, isSecret ->
-                            if (isSecret) {
-                                navController.navigate("secretGate/$albumId")
-                            } else {
-                                navController.navigate("album/$albumId")
-                            }
-                        },
+            composable(GaleriaTab.ALBUNS.route) {
+                AlbumsScreen(
+                    viewModel = viewModel,
+                    onOpenAlbum = { albumId, isSecret ->
+                        if (isSecret) {
+                            navController.navigate("secretGate/$albumId")
+                        } else {
+                            navController.navigate("album/$albumId")
+                        }
+                    },
                         onOpenDeviceFolder = { name ->
                             navController.navigate("folder/${encode(name)}")
                         },
@@ -109,8 +99,13 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                         viewModel = viewModel,
                         onBack = { navController.popBackStack() },
                         onOpenTrash = { navController.navigate("trash") },
-                        onOpenLargeFiles = { navController.navigate("largeFiles") }
+                        onOpenLargeFiles = { navController.navigate("largeFiles") },
+                        onOpenAbout = { navController.navigate("about") }
                     )
+                }
+
+                composable("about") {
+                    AboutScreen(onBack = { navController.popBackStack() })
                 }
 
                 composable("largeFiles") {
@@ -256,9 +251,22 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                     )
                 }
             }
+
+            if (showBottomBar) {
+                GaleriaBottomBar(
+                    currentRoute = currentRoute,
+                    opaque = bottomBarOpaque,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                ) { tab ->
+                    navController.navigate(tab.route) {
+                        popUpTo(GaleriaTab.ALBUNS.route) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+            }
         }
     }
-}
 
 private fun encode(s: String) = URLEncoder.encode(s, "UTF-8")
 private fun decode(s: String) = URLDecoder.decode(s, "UTF-8")

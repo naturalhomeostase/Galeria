@@ -1,3 +1,15 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.Galeria" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!--
+        Tema exclusivo pra splash screen, usado só no instante entre o toque no ícone e o
+        primeiro frame desenhado pelo Compose. postSplashScreenTheme garante que a Activity
+        volte pro tema normal (Theme.Galeria) assim que installSplashScreen() detecta que o
+        conteúdo já está pronto — sem isso ela ficaria presa na aparência de splash.
+    -->
+    <style name="Theme.Galeria.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.Galeria</item>
+    </style>
 </resources>
