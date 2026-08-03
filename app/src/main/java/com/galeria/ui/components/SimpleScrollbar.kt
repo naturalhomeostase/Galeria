@@ -64,8 +64,6 @@ fun BoxScope.SimpleVerticalScrollbar(state: LazyGridState, modifier: Modifier = 
         ?.let { (-it.offset.y.toFloat() / estimatedItemHeight.toFloat()).coerceIn(0f, 1f) }
         ?: 0f
     val firstVisible = (firstVisibleItemInfo?.index ?: 0).toFloat() + subItemFraction
-    val visibleCount = layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
-    val thumbFraction = (visibleCount.toFloat() / totalItems.toFloat()).coerceIn(0.06f, 1f)
 
     // A estimativa por índice acima parte do princípio de que todo item tem a mesma altura,
     // o que não é verdade quando há cabeçalhos de seção (ocupam a linha inteira) misturados
@@ -85,9 +83,14 @@ fun BoxScope.SimpleVerticalScrollbar(state: LazyGridState, modifier: Modifier = 
             .width(20.dp)
             .onGloballyPositioned { trackHeightPx = it.size.height.toFloat() }
     ) {
-        val thumbHeightPx = trackHeightPx * thumbFraction
+        // Tamanho FIXO do polegar (só a posição muda ao rolar) -- é assim que a maioria dos
+        // apps faz. Antes o tamanho era calculado como visibleItemsInfo.size / totalItems, e
+        // como cabeçalhos de seção ocupam a linha inteira (contam como "1 item" onde caberiam
+        // vários cards), o polegar crescia e encolhia toda hora que um cabeçalho entrava ou
+        // saía da tela -- daí o efeito "pulsando" e nada natural.
+        val thumbHeightDp = 48.dp
+        val thumbHeightPx = with(density) { thumbHeightDp.toPx() }
         val rawOffsetPx = (trackHeightPx - thumbHeightPx) * progress
-        val thumbHeightDp = with(density) { thumbHeightPx.toDp() }
 
         // A posição do polegar acompanha a rolagem diretamente (sem animação defasada),
         // que é o que causava o "engasgo"/artefato visual ao rolar rápido: a barra tentava

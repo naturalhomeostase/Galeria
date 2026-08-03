@@ -185,7 +185,13 @@ fun AlbumsScreen(
         },
         floatingActionButton = {
             if (!selectionMode) {
-                FloatingActionButton(onClick = { showCreateDialog = true }) {
+                FloatingActionButton(
+                    onClick = { showCreateDialog = true },
+                    // A barra de baixo agora flutua por cima do conteúdo (pra deixar o efeito
+                    // de transparência de verdade) em vez de reservar espaço embaixo como
+                    // antes -- sem esse respiro aqui, o FAB ficava embaixo dela e intocável.
+                    modifier = Modifier.padding(bottom = GaleriaBottomBarHeight)
+                ) {
                     Icon(Icons.Filled.Add, contentDescription = "Criar álbum")
                 }
             }

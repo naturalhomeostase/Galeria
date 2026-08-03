@@ -18,6 +18,9 @@ import com.galeria.data.model.SafFolderEntity
 import com.galeria.util.DateUtils
 import com.galeria.util.SafUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -233,8 +236,17 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             _isLoadingPhotos.value = true
             val mediaPhotos = app.mediaStoreRepository.getAllPhotos()
             val currentSafFolders = app.settingsRepository.getSafFolders().first()
-            val safPhotos = currentSafFolders.flatMap { folder ->
-                SafUtils.loadImagesFromTree(getApplication(), Uri.parse(folder.treeUri), folder.displayName)
+            // Antes isso era um flatMap sequencial: cada pasta oculta só começava a ser lida
+            // depois que a anterior terminava por completo. Com várias pastas SAF cadastradas,
+            // os tempos se somavam um atrás do outro. Rodando em paralelo, o tempo total passa
+            // a ser o da pasta mais lenta, não a soma de todas.
+            val safPhotos = coroutineScope {
+                currentSafFolders
+                    .map { folder ->
+                        async { SafUtils.loadImagesFromTree(getApplication(), Uri.parse(folder.treeUri), folder.displayName) }
+                    }
+                    .awaitAll()
+                    .flatten()
             }
             _allPhotos.value = mediaPhotos + safPhotos
             _isLoadingPhotos.value = false

@@ -4,8 +4,10 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -89,11 +91,23 @@ fun AboutScreen(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Image(
-                        painter = painterResource(R.mipmap.ic_launcher),
-                        contentDescription = null,
-                        modifier = Modifier.size(84.dp).clip(RoundedCornerShape(20.dp))
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(84.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(androidx.compose.ui.res.colorResource(R.color.ic_launcher_background)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // R.mipmap.ic_launcher é um adaptive-icon XML (camadas de fundo +
+                        // frente + monocromático) -- painterResource/Image não conseguem
+                        // carregar esse formato diretamente e travavam o app ao abrir essa
+                        // tela. O PNG de frente sozinho é uma imagem comum, segura de exibir.
+                        Image(
+                            painter = painterResource(R.drawable.ic_launcher_foreground),
+                            contentDescription = null,
+                            modifier = Modifier.size(84.dp)
+                        )
+                    }
                     Spacer(Modifier.height(12.dp))
                     Text(appName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     Text(

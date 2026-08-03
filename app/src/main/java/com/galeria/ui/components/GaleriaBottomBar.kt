@@ -46,11 +46,11 @@ fun GaleriaBottomBar(
     modifier: Modifier = Modifier,
     onSelect: (GaleriaTab) -> Unit
 ) {
-    // Anima suavemente entre opaca (0.88f, como sempre foi) e quase transparente ao rolar as
-    // fotos/álbuns pra baixo — 0.06f em vez de 0f pra barra continuar minimamente visível e
-    // "tocável" mesmo transparente, em vez de sumir por completo.
+    // Anima suavemente entre opaca (0.88f, como sempre foi) e translúcida (0.35f) ao rolar as
+    // fotos/álbuns pra baixo. Não precisa ser quase invisível (0.06f como era antes) pra dar a
+    // sensação de transparência — só precisa ser visivelmente mais vazada que o estado parado.
     val alpha by animateFloatAsState(
-        targetValue = if (opaque) 0.88f else 0.06f,
+        targetValue = if (opaque) 0.88f else 0.35f,
         animationSpec = tween(durationMillis = 200),
         label = "bottomBarAlpha"
     )
