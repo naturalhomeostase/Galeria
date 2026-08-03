@@ -5,12 +5,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -23,6 +27,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.Lock
@@ -31,6 +37,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -46,6 +53,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,16 +86,22 @@ fun AlbumsScreen(
     onOpenSettings: () -> Unit
 ) {
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
+    val trashedAlbums by viewModel.trashedAlbums.collectAsState()
     val isLoadingPhotos by viewModel.isLoadingPhotos.collectAsState()
     val deviceFolders by viewModel.deviceFolders.collectAsState()
     val showHidden by viewModel.showHiddenAlbums.collectAsState()
     val sortOption by viewModel.albumSortOption.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showAlbumTrash by remember { mutableStateOf(false) }
     var sortMenuOpen by remember { mutableStateOf(false) }
     val gridState = rememberLazyGridState()
     ObserveGridScrollForBottomBar(gridState = gridState, viewModel = viewModel)
 
     var selectionMode by remember { mutableStateOf(false) }
+    DisposableEffect(selectionMode) {
+        viewModel.setSelectionModeActive(selectionMode)
+        onDispose { if (selectionMode) viewModel.setSelectionModeActive(false) }
+    }
     var selectedAlbumIds by remember { mutableStateOf(setOf<Long>()) }
     var selectedFolderNames by remember { mutableStateOf(setOf<String>()) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -150,6 +164,17 @@ fun AlbumsScreen(
                 CenterAlignedTopAppBar(
                     title = { Text("Álbuns") },
                     actions = {
+                        IconButton(onClick = { showAlbumTrash = true }) {
+                            androidx.compose.material3.BadgedBox(
+                                badge = {
+                                    if (trashedAlbums.isNotEmpty()) {
+                                        androidx.compose.material3.Badge { Text("${trashedAlbums.size}") }
+                                    }
+                                }
+                            ) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Lixeira de álbuns")
+                            }
+                        }
                         IconButton(onClick = onOpenSettings) {
                             Icon(Icons.Filled.Settings, contentDescription = "Configurações")
                         }
@@ -339,26 +364,63 @@ fun AlbumsScreen(
         val count = selectedAlbumIds.size
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text(if (count == 1) "Excluir álbum" else "Excluir álbuns") },
+            title = { Text(if (count == 1) "Mover álbum para a lixeira" else "Mover álbuns para a lixeira") },
             text = {
                 Text(
-                    if (count == 1) "Tem certeza que deseja excluir este álbum? As fotos não serão apagadas do dispositivo."
-                    else "Tem certeza que deseja excluir estes $count álbuns? As fotos não serão apagadas do dispositivo."
+                    if (count == 1) "As fotos não serão apagadas do dispositivo. Você pode restaurar este álbum da lixeira depois."
+                    else "As fotos não serão apagadas do dispositivo. Você pode restaurar estes $count álbuns da lixeira depois."
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    selectedAlbumIds.forEach { id -> viewModel.deleteAlbum(id) }
+                    selectedAlbumIds.forEach { id -> viewModel.moveAlbumToTrash(id) }
                     showDeleteConfirm = false
                     exitSelection()
                 }) {
-                    Text("Excluir")
+                    Text("Mover para lixeira")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) {
                     Text("Cancelar")
                 }
+            }
+        )
+    }
+
+    if (showAlbumTrash) {
+        AlertDialog(
+            onDismissRequest = { showAlbumTrash = false },
+            title = { Text("Lixeira de álbuns") },
+            text = {
+                if (trashedAlbums.isEmpty()) {
+                    Text("Nenhum álbum na lixeira.")
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 320.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        trashedAlbums.forEach { album ->
+                            ListItem(
+                                headlineContent = { Text(album.name) },
+                                trailingContent = {
+                                    Row {
+                                        IconButton(onClick = { viewModel.restoreAlbumFromTrash(album.id) }) {
+                                            Icon(Icons.Filled.Restore, contentDescription = "Restaurar álbum")
+                                        }
+                                        IconButton(onClick = { viewModel.deleteAlbum(album.id) }) {
+                                            Icon(Icons.Filled.DeleteForever, contentDescription = "Excluir definitivamente")
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAlbumTrash = false }) { Text("Fechar") }
             }
         )
     }

@@ -11,7 +11,9 @@ data class AlbumEntity(
     val coverUri: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val lastModifiedAt: Long = System.currentTimeMillis(),
-    val isHidden: Boolean = false
+    val isHidden: Boolean = false,
+    val isTrashed: Boolean = false,
+    val trashedAt: Long? = null
 )
 
 @Entity(tableName = "album_photos", primaryKeys = ["albumId", "photoUri"])

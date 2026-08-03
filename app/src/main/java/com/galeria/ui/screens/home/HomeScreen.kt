@@ -19,6 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +58,10 @@ fun HomeScreen(
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
     val deviceFolders by viewModel.deviceFolders.collectAsState()
     var selectionMode by remember { mutableStateOf(false) }
+    DisposableEffect(selectionMode) {
+        viewModel.setSelectionModeActive(selectionMode)
+        onDispose { if (selectionMode) viewModel.setSelectionModeActive(false) }
+    }
     val selected = remember { mutableStateOf(setOf<String>()) }
     var showCopyDialog by remember { mutableStateOf(false) }
     var showCreateForCopy by remember { mutableStateOf(false) }

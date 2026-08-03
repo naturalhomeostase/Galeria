@@ -226,6 +226,17 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         if (_bottomBarOpaque.value != opaque) _bottomBarOpaque.value = opaque
     }
 
+    // Fotos/Álbuns/Favoritos têm seu próprio "menu de seleção" ancorado embaixo (Copiar,
+    // Mover, Excluir...). Como a barra de navegação agora flutua por cima do conteúdo pra dar
+    // o efeito de transparência, ela ficava sobrepondo e bloqueando o toque nesse menu de
+    // seleção -- por isso ele precisa sumir enquanto uma seleção estiver ativa.
+    private val _selectionModeActive = MutableStateFlow(false)
+    val selectionModeActive: StateFlow<Boolean> = _selectionModeActive
+
+    fun setSelectionModeActive(active: Boolean) {
+        if (_selectionModeActive.value != active) _selectionModeActive.value = active
+    }
+
     fun onPermissionGranted() {
         _hasPermission.value = true
         loadPhotos()
@@ -305,6 +316,20 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     fun removePhotoFromAlbum(albumId: Long, photoUri: String) {
         viewModelScope.launch { app.albumRepository.removePhoto(albumId, photoUri) }
+    }
+
+    val trashedAlbums: StateFlow<List<AlbumEntity>> = app.albumRepository.getTrashedAlbums()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // "Excluir álbum" no dia a dia move pra lixeira (reversível) em vez de apagar na hora --
+    // deleteAlbum (abaixo) continua existindo, mas agora só é chamado a partir da lixeira,
+    // como exclusão definitiva mesmo.
+    fun moveAlbumToTrash(albumId: Long) {
+        viewModelScope.launch { app.albumRepository.moveToTrash(albumId) }
+    }
+
+    fun restoreAlbumFromTrash(albumId: Long) {
+        viewModelScope.launch { app.albumRepository.restoreFromTrash(albumId) }
     }
 
     fun deleteAlbum(albumId: Long) {

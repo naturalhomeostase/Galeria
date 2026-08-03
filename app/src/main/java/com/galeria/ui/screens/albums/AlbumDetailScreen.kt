@@ -15,7 +15,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -67,7 +66,6 @@ fun AlbumDetailScreen(
     val stats = albumsWithStats.firstOrNull { it.album.id == albumId }
     val favorites by viewModel.favoriteUris.collectAsState()
     var sortOption by remember(albumId) { mutableStateOf(viewModel.getPhotoSortOptionFor("album_$albumId")) }
-    var menuOpen by remember { mutableStateOf(false) }
     var sortMenuOpen by remember { mutableStateOf(false) }
     var selectionMode by remember { mutableStateOf(false) }
     val selected = remember { mutableStateOf(setOf<String>()) }
@@ -139,19 +137,11 @@ fun AlbumDetailScreen(
                                 )
                             }
                         }
-                        IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções")
-                        }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Excluir álbum") },
-                                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
-                                onClick = {
-                                    menuOpen = false
-                                    viewModel.deleteAlbum(albumId)
-                                    onBack()
-                                }
-                            )
+                        IconButton(onClick = {
+                            viewModel.moveAlbumToTrash(albumId)
+                            onBack()
+                        }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Mover álbum para a lixeira")
                         }
                     }
                 }

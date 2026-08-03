@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.Flow
 class AlbumRepository(private val dao: AlbumDao) {
     fun getAlbums(): Flow<List<AlbumEntity>> = dao.getAlbums()
 
+    fun getTrashedAlbums(): Flow<List<AlbumEntity>> = dao.getTrashedAlbums()
+
     fun getAllCrossRefs(): Flow<List<AlbumPhotoCrossRef>> = dao.getAllCrossRefs()
 
     suspend fun getAlbum(id: Long) = dao.getAlbum(id)
@@ -18,10 +20,17 @@ class AlbumRepository(private val dao: AlbumDao) {
     suspend fun renameAlbum(album: AlbumEntity, newName: String) =
         dao.updateAlbum(album.copy(name = newName, lastModifiedAt = System.currentTimeMillis()))
 
+    // Exclusão definitiva (sem volta) -- usada só a partir da lixeira de álbuns.
     suspend fun deleteAlbum(albumId: Long) {
         dao.clearAlbumPhotos(albumId)
         dao.deleteAlbum(albumId)
     }
+
+    // "Excluir" um álbum no dia a dia manda pra lixeira (reversível), igual já acontece com
+    // fotos -- em vez de apagar de vez na hora, o que era arriscado sem nenhuma confirmação.
+    suspend fun moveToTrash(albumId: Long) = dao.moveToTrash(albumId, System.currentTimeMillis())
+
+    suspend fun restoreFromTrash(albumId: Long) = dao.restoreFromTrash(albumId)
 
     suspend fun setHidden(albumId: Long, hidden: Boolean) = dao.setHidden(albumId, hidden)
 

@@ -20,7 +20,7 @@ import com.galeria.data.model.SecurityEntity
         HiddenFolderEntity::class,
         SafFolderEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

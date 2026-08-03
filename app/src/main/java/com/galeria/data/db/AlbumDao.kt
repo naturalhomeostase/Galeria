@@ -7,8 +7,17 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AlbumDao {
-    @Query("SELECT * FROM albums ORDER BY createdAt DESC")
+    @Query("SELECT * FROM albums WHERE isTrashed = 0 ORDER BY createdAt DESC")
     fun getAlbums(): Flow<List<AlbumEntity>>
+
+    @Query("SELECT * FROM albums WHERE isTrashed = 1 ORDER BY trashedAt DESC")
+    fun getTrashedAlbums(): Flow<List<AlbumEntity>>
+
+    @Query("UPDATE albums SET isTrashed = 1, trashedAt = :timestamp WHERE id = :albumId")
+    suspend fun moveToTrash(albumId: Long, timestamp: Long)
+
+    @Query("UPDATE albums SET isTrashed = 0, trashedAt = NULL WHERE id = :albumId")
+    suspend fun restoreFromTrash(albumId: Long)
 
     @Query("SELECT * FROM albums WHERE id = :albumId")
     suspend fun getAlbum(albumId: Long): AlbumEntity?

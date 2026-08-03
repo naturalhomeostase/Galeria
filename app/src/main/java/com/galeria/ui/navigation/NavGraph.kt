@@ -53,6 +53,7 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
         currentRoute == GaleriaTab.FAVORITOS.route
 
     val bottomBarOpaque by viewModel.bottomBarOpaque.collectAsState()
+    val selectionModeActive by viewModel.selectionModeActive.collectAsState()
 
     // Shared holder for the photo list currently being viewed in the pager
     var viewerUris by remember { mutableStateOf(listOf<String>()) }
@@ -252,7 +253,7 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                 }
             }
 
-            if (showBottomBar) {
+            if (showBottomBar && !selectionModeActive) {
                 GaleriaBottomBar(
                     currentRoute = currentRoute,
                     opaque = bottomBarOpaque,
