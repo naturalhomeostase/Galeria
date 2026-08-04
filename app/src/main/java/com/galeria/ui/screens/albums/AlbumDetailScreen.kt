@@ -71,9 +71,7 @@ fun AlbumDetailScreen(
     val selected = remember { mutableStateOf(setOf<String>()) }
     val gridState = rememberLazyGridState()
     var showCopyDialog by remember { mutableStateOf(false) }
-    var showMoveDialog by remember { mutableStateOf(false) }
     var showCreateForCopy by remember { mutableStateOf(false) }
-    var showCreateForMove by remember { mutableStateOf(false) }
     var showMoveToFolderDialog by remember { mutableStateOf(false) }
 
     val photos = remember(stats) { stats?.let { viewModel.resolvePhotos(it.photoUris) } ?: emptyList() }
@@ -237,7 +235,6 @@ fun AlbumDetailScreen(
                     },
                     onDelete = { bulkDelete(selected.value.toList()) },
                     onCopyToAlbum = { showCopyDialog = true },
-                    onMoveToAlbum = { showMoveDialog = true },
                     onMoveToDeviceFolder = { showMoveToFolderDialog = true }
                 )
             }
@@ -261,24 +258,6 @@ fun AlbumDetailScreen(
         )
     }
 
-    if (showMoveDialog) {
-        AlbumPickerDialog(
-            title = "Mover para álbum",
-            albums = albumsWithStats.map { it.album }.filter { it.id != albumId },
-            onDismiss = { showMoveDialog = false },
-            onPick = { album ->
-                viewModel.addPhotosToAlbum(album.id, selected.value)
-                viewModel.removePhotosFromAlbum(albumId, selected.value)
-                showMoveDialog = false
-                exitSelection()
-            },
-            onCreateNew = {
-                showMoveDialog = false
-                showCreateForMove = true
-            }
-        )
-    }
-
     if (showCreateForCopy) {
         CreateAlbumDialog(
             onDismiss = { showCreateForCopy = false },
@@ -286,20 +265,6 @@ fun AlbumDetailScreen(
                 showCreateForCopy = false
                 viewModel.createAlbum(name, isSecret) { newId ->
                     viewModel.addPhotosToAlbum(newId, selected.value)
-                    exitSelection()
-                }
-            }
-        )
-    }
-
-    if (showCreateForMove) {
-        CreateAlbumDialog(
-            onDismiss = { showCreateForMove = false },
-            onConfirm = { name, isSecret ->
-                showCreateForMove = false
-                viewModel.createAlbum(name, isSecret) { newId ->
-                    viewModel.addPhotosToAlbum(newId, selected.value)
-                    viewModel.removePhotosFromAlbum(albumId, selected.value)
                     exitSelection()
                 }
             }

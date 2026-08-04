@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,6 +20,8 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Info
@@ -65,7 +68,9 @@ fun SettingsScreen(
     val safFolders by viewModel.safFolders.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
     val gridColumns by viewModel.photoGridColumns.collectAsState()
+    val trashedAlbums by viewModel.trashedAlbums.collectAsState()
     var showClearCacheConfirm by remember { mutableStateOf(false) }
+    var showAlbumTrash by remember { mutableStateOf(false) }
 
     val pickFolderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -99,6 +104,17 @@ fun SettingsScreen(
                     supportingContent = { Text("Fotos excluídas recentemente") },
                     leadingContent = { Icon(Icons.Filled.Delete, contentDescription = null) },
                     modifier = Modifier.clickable { onOpenTrash() }
+                )
+                ListItem(
+                    headlineContent = { Text("Lixeira de álbuns") },
+                    supportingContent = {
+                        Text(
+                            if (trashedAlbums.isEmpty()) "Vazia"
+                            else "${trashedAlbums.size} álbum${if (trashedAlbums.size == 1) "" else "ns"}"
+                        )
+                    },
+                    leadingContent = { Icon(Icons.Filled.DeleteForever, contentDescription = null) },
+                    modifier = Modifier.clickable { showAlbumTrash = true }
                 )
                 ListItem(
                     headlineContent = { Text("Arquivos grandes") },
@@ -253,6 +269,39 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showClearCacheConfirm = false }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    if (showAlbumTrash) {
+        AlertDialog(
+            onDismissRequest = { showAlbumTrash = false },
+            title = { Text("Lixeira de álbuns") },
+            text = {
+                if (trashedAlbums.isEmpty()) {
+                    Text("Nenhum álbum na lixeira.")
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                        items(trashedAlbums, key = { it.id }) { album ->
+                            ListItem(
+                                headlineContent = { Text(album.name) },
+                                trailingContent = {
+                                    Row {
+                                        IconButton(onClick = { viewModel.restoreAlbumFromTrash(album.id) }) {
+                                            Icon(Icons.Filled.Restore, contentDescription = "Restaurar álbum")
+                                        }
+                                        IconButton(onClick = { viewModel.deleteAlbum(album.id) }) {
+                                            Icon(Icons.Filled.DeleteForever, contentDescription = "Excluir definitivamente")
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAlbumTrash = false }) { Text("Fechar") }
             }
         )
     }

@@ -8,6 +8,7 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.content.ContentResolver
 import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -452,19 +453,88 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             uriStrings.forEach { uriString ->
                 val photo = getPhotoByUri(uriString)
                 val relativePath = resolveTargetRelativePath(targetFolderName, photo?.isVideo == true)
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
-                }
-                try {
-                    val updated = resolver.update(Uri.parse(uriString), values, null, null)
-                    if (updated <= 0) failures++
+                val uri = Uri.parse(uriString)
+
+                val movedDirectly = try {
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                    }
+                    resolver.update(uri, values, null, null) > 0
                 } catch (_: Exception) {
-                    failures++
+                    false
+                }
+
+                if (!movedDirectly) {
+                    // Itens em "Download" costumam ficar indexados numa coleção separada do
+                    // MediaStore (a de Downloads, não a de Imagens/Vídeos), que só permite o
+                    // caminho continuar dentro de "Download" -- o Android rejeita a mudança
+                    // direta mesmo com a permissão de escrita concedida (é uma trava do
+                    // próprio sistema, não de permissão). O jeito de "mover" nesse caso é
+                    // criar uma cópia nova já na coleção certa e apagar a original -- é o que
+                    // apps como o Google Gallery fazem por trás dos panos pra esses casos.
+                    val moved = copyToCollectionAndDeleteOriginal(resolver, uri, photo, relativePath)
+                    if (!moved) failures++
                 }
             }
             loadPhotos()
             failures
         }
+
+    private fun copyToCollectionAndDeleteOriginal(
+        resolver: ContentResolver,
+        sourceUri: Uri,
+        photo: Photo?,
+        relativePath: String
+    ): Boolean {
+        return try {
+            val displayName = photo?.displayName?.takeIf { it.isNotBlank() } ?: "arquivo_${System.currentTimeMillis()}"
+            val mimeType = photo?.mimeType?.takeIf { it.isNotBlank() } ?: "image/*"
+            val isVideo = photo?.isVideo == true
+            val collection = if (isVideo) {
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            } else {
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            }
+
+            val insertValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val newUri = resolver.insert(collection, insertValues) ?: return false
+
+            val copyOk = resolver.openInputStream(sourceUri)?.use { input ->
+                resolver.openOutputStream(newUri)?.use { output ->
+                    input.copyTo(output)
+                    true
+                } ?: false
+            } ?: false
+
+            if (!copyOk) {
+                resolver.delete(newUri, null, null)
+                return false
+            }
+
+            resolver.update(
+                newUri,
+                ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
+                null,
+                null
+            )
+
+            try {
+                resolver.delete(sourceUri, null, null)
+            } catch (_: Exception) {
+                // A cópia já existe e está completa nesse ponto -- se não conseguir apagar o
+                // original (raro), fica duplicado, o que é bem mais seguro do que arriscar
+                // apagar o original sem garantir que a cópia terminou de verdade.
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
 }
 
 fun groupPhotosByMonthUtil(photos: List<Photo>, descending: Boolean = true): List<MonthGroup> {

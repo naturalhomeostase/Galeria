@@ -13,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
@@ -31,11 +30,9 @@ import androidx.compose.ui.unit.sp
 
 /**
  * Barra de ações exibida quando há itens selecionados numa grade de fotos.
- * onMoveToAlbum é nulo quando não há um álbum de origem (ex.: tela de Fotos ou Favoritos),
- * nesse caso a ação "mover" fica oculta e só "copiar para álbum" aparece.
  *
  * Cada ação tem um rótulo de texto abaixo do ícone (não só o ícone) para deixar claro
- * o que cada botão faz, já que "copiar/mover para álbum" nem sempre é óbvio só pelo ícone.
+ * o que cada botão faz, já que "copiar para álbum" nem sempre é óbvio só pelo ícone.
  */
 @Composable
 fun SelectionActionBar(
@@ -45,7 +42,6 @@ fun SelectionActionBar(
     onShare: () -> Unit,
     onDelete: () -> Unit,
     onCopyToAlbum: () -> Unit,
-    onMoveToAlbum: (() -> Unit)? = null,
     onMoveToDeviceFolder: () -> Unit
 ) {
     Row(
@@ -68,9 +64,6 @@ fun SelectionActionBar(
         ) {
             ActionBarItem(Icons.Filled.Star, "Favoritar", onFavorite)
             ActionBarItem(Icons.Filled.ContentCopy, "Copiar", onCopyToAlbum)
-            if (onMoveToAlbum != null) {
-                ActionBarItem(Icons.Filled.DriveFileMove, "Mover", onMoveToAlbum)
-            }
             ActionBarItem(Icons.Filled.Folder, "Pasta", onMoveToDeviceFolder)
             ActionBarItem(Icons.Filled.Share, "Compartilhar", onShare)
             ActionBarItem(Icons.Filled.Delete, "Lixeira", onDelete)
