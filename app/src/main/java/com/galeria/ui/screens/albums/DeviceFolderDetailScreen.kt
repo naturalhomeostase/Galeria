@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.DropdownMenu
@@ -85,6 +86,7 @@ fun DeviceFolderDetailScreen(
     var showCreateForCopy by remember { mutableStateOf(false) }
     var showMoveToFolderDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
+    var showTrashFolderConfirm by remember { mutableStateOf(false) }
 
     fun exitSelection() {
         selectionMode = false
@@ -96,6 +98,15 @@ fun DeviceFolderDetailScreen(
         // Sem isso, a foto/vídeo continuava aparecendo na grade depois de excluído --
         // a lista em memória só era recarregada ao reabrir o app.
         viewModel.loadPhotos()
+    })
+
+    // Handler dedicado pro "mover pasta inteira pra lixeira": só volta pro álbuns DEPOIS que a
+    // exclusão é de fato confirmada (o diálogo do sistema é assíncrono) -- se onBack() rodasse
+    // logo depois de chamar bulkDelete, essa tela seria desmontada e o resultado do diálogo do
+    // Android nunca voltaria pra cá.
+    val trashWholeFolder = rememberBulkDeleteAction(onCompleted = {
+        viewModel.loadPhotos()
+        onBack()
     })
 
     val moveToFolder = rememberMoveToFolderAction(viewModel = viewModel, onCompleted = { failures ->
@@ -134,6 +145,9 @@ fun DeviceFolderDetailScreen(
                 },
                 actions = {
                     if (!selectionMode) {
+                        IconButton(onClick = { showTrashFolderConfirm = true }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Mover pasta para a lixeira")
+                        }
                         IconButton(onClick = { showRenameDialog = true }) {
                             Icon(Icons.Filled.DriveFileRenameOutline, contentDescription = "Renomear pasta")
                         }
@@ -280,6 +294,28 @@ fun DeviceFolderDetailScreen(
             onConfirm = { targetFolder ->
                 showMoveToFolderDialog = false
                 moveToFolder(selected.value.toList(), targetFolder)
+            }
+        )
+    }
+
+    if (showTrashFolderConfirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showTrashFolderConfirm = false },
+            title = { Text("Mover pasta para a lixeira") },
+            text = {
+                Text(
+                    "As ${photos.size} fotos/vídeos de \"$folderName\" vão pra lixeira do sistema. " +
+                        "Você pode restaurá-los de lá dentro do prazo normal de exclusão do Android."
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showTrashFolderConfirm = false
+                    trashWholeFolder(photos.map { it.uri.toString() })
+                }) { Text("Mover para lixeira") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showTrashFolderConfirm = false }) { Text("Cancelar") }
             }
         )
     }

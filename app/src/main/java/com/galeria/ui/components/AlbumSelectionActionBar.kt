@@ -21,8 +21,8 @@ import androidx.compose.ui.unit.dp
 
 /**
  * Barra de ações exibida ao selecionar um ou mais álbuns/pastas na tela de Álbuns.
- * onDelete é nulo quando a seleção contém apenas pastas do dispositivo (que não podem
- * ser excluídas, só ocultadas).
+ * Álbuns do app vão pra lixeira de álbuns (reversível); pastas do dispositivo mandam as
+ * fotos de dentro pra lixeira do sistema.
  */
 @Composable
 fun AlbumSelectionActionBar(
@@ -56,7 +56,7 @@ fun AlbumSelectionActionBar(
             }
             if (onDelete != null) {
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Excluir álbum")
+                    Icon(Icons.Filled.Delete, contentDescription = "Mover para a lixeira")
                 }
             }
         }

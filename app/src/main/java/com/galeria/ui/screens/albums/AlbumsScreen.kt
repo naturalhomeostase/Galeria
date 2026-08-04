@@ -67,6 +67,7 @@ import com.galeria.ui.sortAlbums
 import com.galeria.ui.sortDeviceFolders
 import com.galeria.util.FileUtils
 import com.galeria.util.ObserveGridScrollForBottomBar
+import com.galeria.util.rememberBulkDeleteAction
 import com.galeria.ui.components.GaleriaBottomBarHeight
 import androidx.compose.foundation.layout.PaddingValues
 
@@ -79,6 +80,7 @@ fun AlbumsScreen(
     onOpenSettings: () -> Unit
 ) {
     val albumsWithStats by viewModel.albumsWithStats.collectAsState()
+    val allPhotos by viewModel.allPhotos.collectAsState()
     val isLoadingPhotos by viewModel.isLoadingPhotos.collectAsState()
     val deviceFolders by viewModel.deviceFolders.collectAsState()
     val showHidden by viewModel.showHiddenAlbums.collectAsState()
@@ -102,6 +104,10 @@ fun AlbumsScreen(
         selectedAlbumIds = emptySet()
         selectedFolderNames = emptySet()
     }
+
+    val bulkDelete = rememberBulkDeleteAction(onCompleted = {
+        viewModel.loadPhotos()
+    })
 
     fun toggleAlbumSelection(id: Long) {
         selectedAlbumIds = if (selectedAlbumIds.contains(id)) selectedAlbumIds - id else selectedAlbumIds + id
@@ -132,7 +138,10 @@ fun AlbumsScreen(
     val selectedAlbumHiddenStates = albumsWithStats.filter { selectedAlbumIds.contains(it.album.id) }.map { it.isHidden }
     val selectedFolderHiddenStates = deviceFolders.filter { selectedFolderNames.contains(it.name) }.map { it.isHidden }
     val totalSelectedCount = selectedAlbumIds.size + selectedFolderNames.size
-    val canDeleteSelection = selectedFolderNames.isEmpty() && selectedAlbumIds.isNotEmpty()
+    // Álbuns criados no app vão pra lixeira de álbuns (reversível); pastas do dispositivo não
+    // têm esse conceito -- pra elas, "excluir" manda as fotos de dentro pra lixeira do sistema
+    // (a mesma usada em qualquer exclusão de foto, com aquele aviso de confirmação do Android).
+    val canDeleteSelection = totalSelectedCount > 0
     val allSelectedHidden = totalSelectedCount > 0 &&
         (selectedAlbumHiddenStates + selectedFolderHiddenStates).all { it }
 
@@ -341,19 +350,39 @@ fun AlbumsScreen(
     }
 
     if (showDeleteConfirm) {
-        val count = selectedAlbumIds.size
+        val albumCount = selectedAlbumIds.size
+        val folderCount = selectedFolderNames.size
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text(if (count == 1) "Mover álbum para a lixeira" else "Mover álbuns para a lixeira") },
+            title = { Text("Mover para a lixeira") },
             text = {
                 Text(
-                    if (count == 1) "As fotos não serão apagadas do dispositivo. Você pode restaurar este álbum da lixeira depois."
-                    else "As fotos não serão apagadas do dispositivo. Você pode restaurar estes $count álbuns da lixeira depois."
+                    buildString {
+                        if (albumCount > 0) {
+                            append(
+                                if (albumCount == 1) "1 álbum vai pra lixeira de álbuns (em Configurações), reversível a qualquer momento. "
+                                else "$albumCount álbuns vão pra lixeira de álbuns (em Configurações), reversíveis a qualquer momento. "
+                            )
+                        }
+                        if (folderCount > 0) {
+                            val photoCount = allPhotos.count { it.bucketName in selectedFolderNames }
+                            append(
+                                if (folderCount == 1) "As $photoCount fotos/vídeos da pasta selecionada vão pra lixeira do sistema."
+                                else "As $photoCount fotos/vídeos das $folderCount pastas selecionadas vão pra lixeira do sistema."
+                            )
+                        }
+                    }
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     selectedAlbumIds.forEach { id -> viewModel.moveAlbumToTrash(id) }
+                    if (selectedFolderNames.isNotEmpty()) {
+                        val uris = allPhotos
+                            .filter { it.bucketName in selectedFolderNames }
+                            .map { it.uri.toString() }
+                        bulkDelete(uris)
+                    }
                     showDeleteConfirm = false
                     exitSelection()
                 }) {
