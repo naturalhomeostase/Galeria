@@ -413,16 +413,83 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
      * Pictures (fotos) ou Movies (vídeos), que é onde o Android permite criar pastas novas
      * pelo MediaStore sem pedir mais permissões.
      */
+    // O MediaStore só permite que itens de imagem/vídeo fiquem dentro de um conjunto fixo de
+    // pastas de primeiro nível -- tentar inserir em qualquer outra é sempre rejeitado pelo
+    // sistema, não é uma questão de permissão. Pastas como "WhatsApp Images" ou "Telegram
+    // Images" costumam ficar direto na raiz do armazenamento (fora de DCIM/Pictures), então
+    // reaproveitar o caminho exato delas não funciona -- por isso mover para uma pasta "nova"
+    // sempre dava certo (cai em Pictures/Nome) mas mover para certas pastas existentes falhava.
+    private val ALLOWED_IMAGE_TOP_DIRS = setOf("DCIM", "Pictures")
+    private val ALLOWED_VIDEO_TOP_DIRS = setOf("DCIM", "Pictures", "Movies")
+
     fun resolveTargetRelativePath(targetFolderName: String, isVideo: Boolean): String {
+        val allowedTopDirs = if (isVideo) ALLOWED_VIDEO_TOP_DIRS else ALLOWED_IMAGE_TOP_DIRS
+        val base = if (isVideo) "Movies" else "Pictures"
+
         val existingSample = _allPhotos.value.firstOrNull { it.bucketName == targetFolderName }
         if (existingSample != null) {
             val root = Environment.getExternalStorageDirectory().absolutePath
             val withoutRoot = existingSample.path.removePrefix(root).trimStart('/')
             val dir = withoutRoot.substringBeforeLast('/', missingDelimiterValue = "")
-            if (dir.isNotBlank()) return "$dir/"
+            val topDir = dir.substringBefore('/', missingDelimiterValue = dir)
+            // Só reaproveita o caminho original se ele realmente for permitido pro tipo de
+            // mídia. Também rejeita qualquer coisa que pareça um caminho de pasta SAF (content://)
+            // em vez de um caminho de arquivo de verdade.
+            if (dir.isNotBlank() && topDir in allowedTopDirs && !dir.contains("://")) {
+                return "$dir/"
+            }
         }
-        val base = if (isVideo) "Movies" else "Pictures"
         return "$base/$targetFolderName/"
+    }
+
+    /**
+     * Renomeia uma pasta do dispositivo -- na prática, "move" cada arquivo dela pro mesmo
+     * lugar só que com o nome final trocado (ex.: DCIM/Antiga/ -> DCIM/Nova/). Usa a mesma
+     * estratégia de tentar direto e cair pro fallback de cópia quando necessário (itens da
+     * pasta Download, por exemplo, sempre precisam do fallback).
+     */
+    suspend fun renameDeviceFolder(oldFolderName: String, newFolderName: String): Int =
+        withContext(Dispatchers.IO) {
+            var failures = 0
+            val resolver = getApplication<Application>().contentResolver
+            val photosInFolder = _allPhotos.value.filter { it.bucketName == oldFolderName }
+
+            photosInFolder.forEach { photo ->
+                val newRelativePath = resolveRenamedRelativePath(photo, newFolderName)
+                val movedDirectly = try {
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, newRelativePath)
+                    }
+                    resolver.update(photo.uri, values, null, null) > 0
+                } catch (e: Exception) {
+                    android.util.Log.w("GalleriaRename", "Update direto falhou pra ${photo.uri}: ${e.message}")
+                    false
+                }
+
+                if (!movedDirectly) {
+                    val moved = copyToCollectionAndDeleteOriginal(resolver, photo.uri, photo, newRelativePath)
+                    if (!moved) failures++
+                }
+            }
+            loadPhotos()
+            failures
+        }
+
+    private fun resolveRenamedRelativePath(photo: Photo, newFolderName: String): String {
+        val allowedTopDirs = if (photo.isVideo) ALLOWED_VIDEO_TOP_DIRS else ALLOWED_IMAGE_TOP_DIRS
+        val base = if (photo.isVideo) "Movies" else "Pictures"
+        val root = Environment.getExternalStorageDirectory().absolutePath
+        val withoutRoot = photo.path.removePrefix(root).trimStart('/')
+        val dir = withoutRoot.substringBeforeLast('/', missingDelimiterValue = "")
+        val topDir = dir.substringBefore('/', missingDelimiterValue = dir)
+
+        if (dir.isNotBlank() && topDir in allowedTopDirs && !dir.contains("://")) {
+            // Troca só o último pedaço do caminho (o nome da pasta), preservando o resto --
+            // ex.: "DCIM/NomeAntigo" -> "DCIM/NomeNovo", "Pictures/Sub/Antiga" -> "Pictures/Sub/Nova".
+            val parent = dir.substringBeforeLast('/', missingDelimiterValue = "")
+            return if (parent.isBlank() || parent == dir) "$newFolderName/" else "$parent/$newFolderName/"
+        }
+        return "$base/$newFolderName/"
     }
 
     /**
@@ -460,7 +527,8 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                         put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
                     }
                     resolver.update(uri, values, null, null) > 0
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    android.util.Log.w("GalleriaMove", "Update direto falhou pra $uriString -> $relativePath: ${e.message}")
                     false
                 }
 
@@ -531,7 +599,8 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 // apagar o original sem garantir que a cópia terminou de verdade.
             }
             true
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.w("GalleriaMove", "Cópia de fallback falhou pra $sourceUri -> $relativePath: ${e.message}")
             false
         }
     }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -13,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -82,6 +84,7 @@ fun DeviceFolderDetailScreen(
     var showCopyDialog by remember { mutableStateOf(false) }
     var showCreateForCopy by remember { mutableStateOf(false) }
     var showMoveToFolderDialog by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
 
     fun exitSelection() {
         selectionMode = false
@@ -106,6 +109,20 @@ fun DeviceFolderDetailScreen(
         }
     })
 
+    val renameFolder = com.galeria.util.rememberRenameFolderAction(viewModel = viewModel, onCompleted = { failures ->
+        showRenameDialog = false
+        if (failures > 0) {
+            android.widget.Toast.makeText(
+                context,
+                "Alguns itens não puderam ser renomeados",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+        // O nome da pasta mudou -- essa tela ficaria "presa" olhando pro nome antigo,
+        // então volta pro álbuns, que já vai mostrar a pasta com o nome novo.
+        onBack()
+    })
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -117,6 +134,9 @@ fun DeviceFolderDetailScreen(
                 },
                 actions = {
                     if (!selectionMode) {
+                        IconButton(onClick = { showRenameDialog = true }) {
+                            Icon(Icons.Filled.DriveFileRenameOutline, contentDescription = "Renomear pasta")
+                        }
                         FilledTonalIconButton(onClick = { sortMenuOpen = true }, modifier = Modifier.size(38.dp)) {
                             Icon(Icons.Filled.Sort, contentDescription = "Ordenar por")
                         }
@@ -260,6 +280,38 @@ fun DeviceFolderDetailScreen(
             onConfirm = { targetFolder ->
                 showMoveToFolderDialog = false
                 moveToFolder(selected.value.toList(), targetFolder)
+            }
+        )
+    }
+
+    if (showRenameDialog) {
+        var newName by remember { mutableStateOf(folderName) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showRenameDialog = false },
+            title = { Text("Renomear pasta") },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        val trimmed = newName.trim()
+                        if (trimmed.isNotBlank() && trimmed != folderName) {
+                            renameFolder(photos.map { it.uri.toString() }, folderName, trimmed)
+                        } else {
+                            showRenameDialog = false
+                        }
+                    },
+                    enabled = newName.isNotBlank()
+                ) { Text("Renomear") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showRenameDialog = false }) { Text("Cancelar") }
             }
         )
     }

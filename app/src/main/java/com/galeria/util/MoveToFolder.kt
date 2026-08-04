@@ -75,3 +75,59 @@ fun rememberMoveToFolderAction(
         }
     }
 }
+
+/**
+ * Mesma ideia do [rememberMoveToFolderAction], mas para renomear uma pasta do dispositivo
+ * inteira. [uris] é só a lista de itens da pasta usada para pedir a permissão de escrita em
+ * lote -- a renomeação em si (achar todos os itens da pasta e trocar o caminho de cada um)
+ * é feita pelo ViewModel.
+ */
+@Composable
+fun rememberRenameFolderAction(
+    viewModel: GalleryViewModel,
+    onCompleted: (failures: Int) -> Unit
+): (uris: List<String>, oldFolderName: String, newFolderName: String) -> Unit {
+    val scope = rememberCoroutineScope()
+    var pendingOldName by remember { mutableStateOf("") }
+    var pendingNewName by remember { mutableStateOf("") }
+
+    val writeLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        val oldName = pendingOldName
+        val newName = pendingNewName
+        pendingOldName = ""
+        pendingNewName = ""
+        if (result.resultCode == Activity.RESULT_OK && oldName.isNotBlank()) {
+            scope.launch {
+                val failures = viewModel.renameDeviceFolder(oldName, newName)
+                onCompleted(failures)
+            }
+        } else {
+            onCompleted(0)
+        }
+    }
+
+    return { uris, oldFolderName, newFolderName ->
+        if (uris.isEmpty() || newFolderName.isBlank()) {
+            onCompleted(0)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val pendingIntent = viewModel.buildMoveWriteRequest(uris)
+            if (pendingIntent != null) {
+                pendingOldName = oldFolderName
+                pendingNewName = newFolderName
+                writeLauncher.launch(IntentSenderRequest.Builder(pendingIntent.intentSender).build())
+            } else {
+                scope.launch {
+                    val failures = viewModel.renameDeviceFolder(oldFolderName, newFolderName)
+                    onCompleted(failures)
+                }
+            }
+        } else {
+            scope.launch {
+                val failures = viewModel.renameDeviceFolder(oldFolderName, newFolderName)
+                onCompleted(failures)
+            }
+        }
+    }
+}
