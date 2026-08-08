@@ -68,8 +68,12 @@ fun HomeScreen(
     var showMoveToFolderDialog by remember { mutableStateOf(false) }
 
     val allUris = remember(groups) { groups.flatMap { g -> g.photos.map { it.uri.toString() } } }
-    val gridState = rememberLazyGridState()
-    ObserveGridScrollForBottomBar(gridState = gridState, viewModel = viewModel)
+    val initialScroll = remember { viewModel.getScrollPosition("home") }
+    val gridState = rememberLazyGridState(
+        initialFirstVisibleItemIndex = initialScroll.first,
+        initialFirstVisibleItemScrollOffset = initialScroll.second
+    )
+    ObserveGridScrollForBottomBar(gridState = gridState, viewModel = viewModel, scopeKey = "home")
 
     fun exitSelection() {
         selectionMode = false

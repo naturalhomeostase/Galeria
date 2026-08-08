@@ -53,8 +53,12 @@ fun FavoritesScreen(
     val photos = remember(favorites, allPhotos) {
         allPhotos.filter { favorites.contains(it.uri.toString()) }
     }
-    val gridState = rememberLazyGridState()
-    ObserveGridScrollForBottomBar(gridState = gridState, viewModel = viewModel)
+    val initialScroll = remember { viewModel.getScrollPosition("favorites") }
+    val gridState = rememberLazyGridState(
+        initialFirstVisibleItemIndex = initialScroll.first,
+        initialFirstVisibleItemScrollOffset = initialScroll.second
+    )
+    ObserveGridScrollForBottomBar(gridState = gridState, viewModel = viewModel, scopeKey = "favorites")
 
     var selectionMode by remember { mutableStateOf(false) }
     DisposableEffect(selectionMode) {

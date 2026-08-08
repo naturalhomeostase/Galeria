@@ -238,6 +238,17 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         if (_selectionModeActive.value != active) _selectionModeActive.value = active
     }
 
+    // Guarda a posição de rolagem de cada grade (Fotos/Álbuns/Favoritos) pra restaurar depois
+    // de voltar de uma foto ou álbum -- não precisa ser reativo (StateFlow), só lido uma vez
+    // na hora de criar o LazyGridState e escrito continuamente enquanto rola.
+    private val scrollPositions = mutableMapOf<String, Pair<Int, Int>>()
+
+    fun setScrollPosition(scopeKey: String, index: Int, offset: Int) {
+        scrollPositions[scopeKey] = index to offset
+    }
+
+    fun getScrollPosition(scopeKey: String): Pair<Int, Int> = scrollPositions[scopeKey] ?: (0 to 0)
+
     fun onPermissionGranted() {
         _hasPermission.value = true
         loadPhotos()

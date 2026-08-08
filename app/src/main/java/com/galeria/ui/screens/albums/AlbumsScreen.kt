@@ -87,8 +87,12 @@ fun AlbumsScreen(
     val sortOption by viewModel.albumSortOption.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
     var sortMenuOpen by remember { mutableStateOf(false) }
-    val gridState = rememberLazyGridState()
-    ObserveGridScrollForBottomBar(gridState = gridState, viewModel = viewModel)
+    val initialScroll = remember { viewModel.getScrollPosition("albums") }
+    val gridState = rememberLazyGridState(
+        initialFirstVisibleItemIndex = initialScroll.first,
+        initialFirstVisibleItemScrollOffset = initialScroll.second
+    )
+    ObserveGridScrollForBottomBar(gridState = gridState, viewModel = viewModel, scopeKey = "albums")
 
     var selectionMode by remember { mutableStateOf(false) }
     DisposableEffect(selectionMode) {
@@ -145,8 +149,13 @@ fun AlbumsScreen(
     val allSelectedHidden = totalSelectedCount > 0 &&
         (selectedAlbumHiddenStates + selectedFolderHiddenStates).all { it }
 
+    var isFirstSortEffect by remember { mutableStateOf(true) }
     androidx.compose.runtime.LaunchedEffect(sortOption) {
-        gridState.scrollToItem(0)
+        if (isFirstSortEffect) {
+            isFirstSortEffect = false
+        } else {
+            gridState.scrollToItem(0)
+        }
     }
 
     Scaffold(

@@ -139,7 +139,20 @@ fun PhotoViewerScreen(
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
         controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller?.hide(WindowInsetsCompat.Type.systemBars())
+
+        // Reaplica o modo imersivo sempre que o app volta pro primeiro plano -- sem isso,
+        // depois de usar "Definir como papel de parede" (ou qualquer ação que leve a outro
+        // app por um instante), o estado das barras do sistema podia voltar bagunçado.
+        val lifecycleOwner = activity as? androidx.lifecycle.LifecycleOwner
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                controller?.hide(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+
         onDispose {
+            lifecycleOwner?.lifecycle?.removeObserver(observer)
             controller?.show(WindowInsetsCompat.Type.systemBars())
         }
     }
@@ -237,7 +250,6 @@ fun PhotoViewerScreen(
                                 setDataAndType(Uri.parse(uriString), "image/*")
                                 putExtra("mimeType", "image/*")
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             try {
                                 context.startActivity(Intent.createChooser(wallpaperIntent, "Usar como"))

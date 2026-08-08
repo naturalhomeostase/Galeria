@@ -3,10 +3,12 @@ package com.galeria.ui.screens.albums
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -16,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -81,6 +84,7 @@ fun DeviceFolderDetailScreen(
 
     var selectionMode by remember { mutableStateOf(false) }
     var sortMenuOpen by remember { mutableStateOf(false) }
+    var overflowMenuOpen by remember { mutableStateOf(false) }
     val selected = remember { mutableStateOf(setOf<String>()) }
     var showCopyDialog by remember { mutableStateOf(false) }
     var showCreateForCopy by remember { mutableStateOf(false) }
@@ -145,12 +149,6 @@ fun DeviceFolderDetailScreen(
                 },
                 actions = {
                     if (!selectionMode) {
-                        IconButton(onClick = { showTrashFolderConfirm = true }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Mover pasta para a lixeira")
-                        }
-                        IconButton(onClick = { showRenameDialog = true }) {
-                            Icon(Icons.Filled.DriveFileRenameOutline, contentDescription = "Renomear pasta")
-                        }
                         FilledTonalIconButton(onClick = { sortMenuOpen = true }, modifier = Modifier.size(38.dp)) {
                             Icon(Icons.Filled.Sort, contentDescription = "Ordenar por")
                         }
@@ -165,6 +163,28 @@ fun DeviceFolderDetailScreen(
                                     }
                                 )
                             }
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        FilledTonalIconButton(onClick = { overflowMenuOpen = true }, modifier = Modifier.size(38.dp)) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções")
+                        }
+                        DropdownMenu(expanded = overflowMenuOpen, onDismissRequest = { overflowMenuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Renomear pasta") },
+                                leadingIcon = { Icon(Icons.Filled.DriveFileRenameOutline, contentDescription = null) },
+                                onClick = {
+                                    overflowMenuOpen = false
+                                    showRenameDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Mover pasta para a lixeira") },
+                                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                                onClick = {
+                                    overflowMenuOpen = false
+                                    showTrashFolderConfirm = true
+                                }
+                            )
                         }
                     }
                 }
