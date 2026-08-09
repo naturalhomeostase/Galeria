@@ -165,6 +165,10 @@ fun WallpaperPreviewScreen(uriString: String, onDone: () -> Unit) {
 
         FilledTonalIconButton(
             onClick = onDone,
+            colors = androidx.compose.material3.IconButtonDefaults.filledTonalIconButtonColors(
+                containerColor = Color.Black.copy(alpha = 0.45f),
+                contentColor = Color.White
+            ),
             modifier = Modifier
                 .statusBarsPadding()
                 .padding(16.dp)
@@ -182,15 +186,32 @@ fun WallpaperPreviewScreen(uriString: String, onDone: () -> Unit) {
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 WallpaperTarget.entries.forEach { option ->
+                    val selected = target == option
                     FilterChip(
-                        selected = target == option,
+                        selected = selected,
                         onClick = { target = option },
-                        label = { Text(option.label) }
+                        label = { Text(option.label) },
+                        colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                            containerColor = Color.Black.copy(alpha = 0.45f),
+                            labelColor = Color.White,
+                            selectedContainerColor = Color.White,
+                            selectedLabelColor = Color.Black
+                        ),
+                        border = androidx.compose.material3.FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = selected,
+                            borderColor = Color.White.copy(alpha = 0.6f),
+                            selectedBorderColor = Color.White
+                        )
                     )
                 }
             }
             Spacer(Modifier.height(12.dp))
             Button(
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Color.Black
+                ),
                 onClick = {
                     val bmp = bitmap ?: return@Button
                     val frameW = frameSize.width.toFloat()
@@ -237,7 +258,7 @@ fun WallpaperPreviewScreen(uriString: String, onDone: () -> Unit) {
                 enabled = bitmap != null && !applying
             ) {
                 if (applying) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary)
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.Black)
                     Spacer(Modifier.width(8.dp))
                 } else {
                     Icon(Icons.Filled.Check, contentDescription = null)

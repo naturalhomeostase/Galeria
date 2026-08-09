@@ -94,6 +94,36 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private val _trashedPhotos = MutableStateFlow<List<Photo>>(emptyList())
     val trashedPhotos: StateFlow<List<Photo>> = _trashedPhotos
 
+    // Sem isso, o app só sabia de fotos/vídeos novos quando o próprio usuário fazia alguma
+    // ação dentro dele (excluir, favoritar...) -- um print de tela, uma foto da câmera ou
+    // qualquer coisa salva por OUTRO app só aparecia depois de sair e voltar pro Galeria. O
+    // ContentObserver avisa a hora que o MediaStore muda, de qualquer app, e recarrega sozinho.
+    private var reloadJob: kotlinx.coroutines.Job? = null
+    private val mediaObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean, uri: Uri?) {
+            super.onChange(selfChange, uri)
+            // O MediaStore costuma disparar várias notificações seguidas pra uma única foto
+            // nova (inserção, depois "não tá mais pendente" etc.) -- o debounce evita recarregar
+            // a lista inteira várias vezes em sequência por causa de um só arquivo novo.
+            reloadJob?.cancel()
+            reloadJob = viewModelScope.launch {
+                kotlinx.coroutines.delay(500)
+                loadPhotos()
+            }
+        }
+    }
+
+    init {
+        val resolver = application.contentResolver
+        resolver.registerContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, mediaObserver)
+        resolver.registerContentObserver(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, mediaObserver)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        getApplication<Application>().contentResolver.unregisterContentObserver(mediaObserver)
+    }
+
     private val _showHiddenAlbums = MutableStateFlow(prefs.getBoolean("show_hidden_albums", false))
     val showHiddenAlbums: StateFlow<Boolean> = _showHiddenAlbums
 
