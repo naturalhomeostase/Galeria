@@ -558,6 +558,26 @@ private fun MinimalVideoSlider(
 @Composable
 private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
     val context = LocalContext.current
+
+    // Conta quantas vezes o app voltou pro primeiro plano enquanto essa foto está sendo
+    // vista. Usado como parte da chave de cache do Coil abaixo -- ao voltar de um fluxo que
+    // mexe com o sistema gráfico (como aplicar papel de parede), isso força uma decodificação
+    // nova da imagem em vez de arriscar reaproveitar algo que o Coil guardou em cache e que
+    // pode ter ficado inválido nesse meio tempo (era isso que causava a foto aparecer e sumir
+    // de novo, ou ficar preta).
+    var resumeTrigger by remember { mutableStateOf(0) }
+    DisposableEffect(Unit) {
+        val activity = context as? Activity
+        val lifecycleOwner = activity as? androidx.lifecycle.LifecycleOwner
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                resumeTrigger++
+            }
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
+    }
+
     ZoomableAsyncImage(
         model = ImageRequest.Builder(context)
             .data(Uri.parse(uriStr))
@@ -571,6 +591,10 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
             // de memória/CPU) é insignificante já que só mostramos uma foto em tela cheia
             // por vez, não uma grade inteira.
             .allowHardware(false)
+            // Chave de cache própria incluindo o resumeTrigger: assim que o app volta do
+            // segundo plano, essa chave muda e o Coil é obrigado a decodificar tudo de novo,
+            // em vez de reaproveitar o que quer que esteja guardado (potencialmente inválido).
+            .memoryCacheKey("$uriStr#$resumeTrigger")
             .build(),
         contentDescription = null,
         modifier = Modifier.fillMaxSize(),

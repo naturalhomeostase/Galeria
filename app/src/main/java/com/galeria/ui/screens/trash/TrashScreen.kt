@@ -62,6 +62,18 @@ fun TrashScreen(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { viewModel.loadTrash() }
 
+    // Restaurar da lixeira também precisa desse mesmo fluxo de permissão -- a maioria das
+    // fotos não foi "criada" pelo nosso app, então uma tentativa direta (sem esse pedido de
+    // permissão) sempre falhava silenciosamente, e o botão de restaurar parecia não fazer nada.
+    val restoreLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            viewModel.loadTrash()
+            viewModel.loadPhotos()
+        }
+    }
+
     LaunchedEffect(Unit) { viewModel.loadTrash() }
 
     Scaffold(
@@ -115,7 +127,12 @@ fun TrashScreen(
                                 horizontalArrangement = Arrangement.SpaceEvenly
                             ) {
                                 TrashActionIcon(Icons.Filled.Restore, "Restaurar") {
-                                    viewModel.restoreFromTrash(photo.uri.toString())
+                                    val pendingIntent = android.provider.MediaStore.createTrashRequest(
+                                        context.contentResolver,
+                                        listOf(photo.uri),
+                                        false
+                                    )
+                                    restoreLauncher.launch(IntentSenderRequest.Builder(pendingIntent.intentSender).build())
                                 }
                                 TrashActionIcon(Icons.Filled.DeleteForever, "Excluir para sempre") {
                                     photoToDelete = photo
