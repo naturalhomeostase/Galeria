@@ -1,5 +1,6 @@
 package com.galeria.ui.screens.wallpaper
 
+import android.app.Activity
 import android.app.WallpaperManager
 import android.graphics.Bitmap
 import android.graphics.Rect
@@ -70,6 +71,7 @@ private enum class WallpaperTarget(val label: String) {
 @Composable
 fun WallpaperPreviewScreen(uriString: String, onDone: () -> Unit) {
     val context = LocalContext.current
+    val activity = context as? Activity
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
 
@@ -210,7 +212,9 @@ fun WallpaperPreviewScreen(uriString: String, onDone: () -> Unit) {
             Button(
                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                     containerColor = Color.White,
-                    contentColor = Color.Black
+                    contentColor = Color.Black,
+                    disabledContainerColor = Color.White.copy(alpha = 0.85f),
+                    disabledContentColor = Color.Black
                 ),
                 onClick = {
                     val bmp = bitmap ?: return@Button
@@ -252,7 +256,19 @@ fun WallpaperPreviewScreen(uriString: String, onDone: () -> Unit) {
                             if (ok) "Papel de parede aplicado" else "Não foi possível aplicar o papel de parede",
                             Toast.LENGTH_SHORT
                         ).show()
-                        if (ok) onDone()
+                        if (ok) {
+                            onDone()
+                            // Apps como o Fossify/Simple Gallery fazem essa etapa numa Activity
+                            // separada -- voltar dela força o Android a reconstruir a janela
+                            // do zero, o que evita esse tipo de problema de renderização.
+                            // Aqui, como tudo roda numa Activity só (mudamos só de tela, não de
+                            // Activity), simulamos esse mesmo "reset" chamando recreate() logo
+                            // depois de voltar -- um pequeno flash na tela é um preço bem menor
+                            // que a foto sumir. O delay curto garante que a navegação de volta
+                            // já foi processada antes da janela ser destruída e reconstruída.
+                            kotlinx.coroutines.delay(80)
+                            activity?.recreate()
+                        }
                     }
                 },
                 enabled = bitmap != null && !applying

@@ -296,12 +296,14 @@ fun PhotoViewerScreen(
                                 context.contentResolver.delete(uri, null, null)
                                 removeUriAndAdvance(uriString)
                             } catch (_: SecurityException) {
+                                android.widget.Toast.makeText(context, "Não foi possível excluir este item", android.widget.Toast.LENGTH_SHORT).show()
                             }
                         } else {
                             try {
                                 android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri)
                                 removeUriAndAdvance(uriString)
                             } catch (_: Exception) {
+                                android.widget.Toast.makeText(context, "Não foi possível excluir este item", android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
