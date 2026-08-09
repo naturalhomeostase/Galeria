@@ -114,7 +114,10 @@ fun AlbumDetailScreen(
             TopAppBar(
                 title = { Text(stats?.album?.name ?: "Álbum") },
                 navigationIcon = {
-                    IconButton(onClick = { if (selectionMode) exitSelection() else onBack() }) {
+                    FilledTonalIconButton(
+                        onClick = { if (selectionMode) exitSelection() else onBack() },
+                        modifier = Modifier.padding(start = 8.dp).size(38.dp)
+                    ) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
                     }
                 },

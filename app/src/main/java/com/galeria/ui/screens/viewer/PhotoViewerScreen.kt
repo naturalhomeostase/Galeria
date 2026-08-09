@@ -1,7 +1,6 @@
 package com.galeria.ui.screens.viewer
 
 import android.app.Activity
-import android.app.WallpaperManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Handler
@@ -115,7 +114,8 @@ fun PhotoViewerScreen(
     startIndex: Int,
     onBack: () -> Unit,
     onEdit: (String) -> Unit,
-    onAddToAlbum: (String) -> Unit
+    onAddToAlbum: (String) -> Unit,
+    onSetWallpaper: (String) -> Unit
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -244,22 +244,8 @@ fun PhotoViewerScreen(
                     Icon(Icons.Filled.PhotoAlbum, contentDescription = "Adicionar a álbum", tint = Color.White)
                 }
                 if (!isCurrentVideo) {
-                    IconButton(onClick = {
-                        currentUri?.let { uriString ->
-                            val wallpaperIntent = Intent(Intent.ACTION_ATTACH_DATA).apply {
-                                setDataAndType(Uri.parse(uriString), "image/*")
-                                putExtra("mimeType", "image/*")
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            try {
-                                context.startActivity(Intent.createChooser(wallpaperIntent, "Usar como"))
-                            } catch (_: Exception) {
-                                val wm = WallpaperManager.getInstance(context)
-                                context.startActivity(wm.getCropAndSetWallpaperIntent(Uri.parse(uriString)))
-                            }
-                        }
-                    }) {
-                        Icon(Icons.Filled.Wallpaper, contentDescription = "Usar como", tint = Color.White)
+                    IconButton(onClick = { currentUri?.let(onSetWallpaper) }) {
+                        Icon(Icons.Filled.Wallpaper, contentDescription = "Usar como papel de parede", tint = Color.White)
                     }
                 }
                 IconButton(onClick = {

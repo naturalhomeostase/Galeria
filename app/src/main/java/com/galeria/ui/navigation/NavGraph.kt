@@ -37,6 +37,7 @@ import com.galeria.ui.screens.secret.SetupSecretScreen
 import com.galeria.ui.screens.settings.SettingsScreen
 import com.galeria.ui.screens.trash.TrashScreen
 import com.galeria.ui.screens.viewer.PhotoViewerScreen
+import com.galeria.ui.screens.wallpaper.WallpaperPreviewScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -221,7 +222,21 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                         },
                         onAddToAlbum = { uri ->
                             navController.navigate("pickAlbum/${encode(uri)}")
+                        },
+                        onSetWallpaper = { uri ->
+                            navController.navigate("wallpaper/${encode(uri)}")
                         }
+                    )
+                }
+
+                composable(
+                    route = "wallpaper/{uri}",
+                    arguments = listOf(navArgument("uri") { type = NavType.StringType })
+                ) { entry ->
+                    val uriStr = decode(entry.arguments?.getString("uri") ?: "")
+                    WallpaperPreviewScreen(
+                        uriString = uriStr,
+                        onDone = { navController.popBackStack() }
                     )
                 }
 
