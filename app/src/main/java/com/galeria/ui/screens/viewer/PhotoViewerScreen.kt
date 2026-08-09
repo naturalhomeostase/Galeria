@@ -289,7 +289,7 @@ fun PhotoViewerScreen(
                         val uri = Uri.parse(uriString)
                         if (uri.authority == "media" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                             pendingDeleteUri = uriString
-                            val pendingIntent = MediaStore.createDeleteRequest(context.contentResolver, listOf(uri))
+                            val pendingIntent = MediaStore.createTrashRequest(context.contentResolver, listOf(uri), true)
                             deleteLauncher.launch(IntentSenderRequest.Builder(pendingIntent.intentSender).build())
                         } else if (uri.authority == "media") {
                             try {
@@ -562,6 +562,15 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
         model = ImageRequest.Builder(context)
             .data(Uri.parse(uriStr))
             .crossfade(200)
+            // Bitmaps de hardware (o padrão do Coil a partir do Android 8) vivem direto na
+            // memória da GPU e podem ficar inválidos depois de certas operações do sistema
+            // que mexem no compositor gráfico -- como WallpaperManager.setBitmap(). Quando
+            // isso acontece, a foto some (fica preta) mas o resto da UI continua normal, já
+            // que ícones são redesenhados a cada frame em vez de reaproveitar um bitmap
+            // guardado. Desativando aqui evita esse tipo de problema; o custo (um pouco mais
+            // de memória/CPU) é insignificante já que só mostramos uma foto em tela cheia
+            // por vez, não uma grade inteira.
+            .allowHardware(false)
             .build(),
         contentDescription = null,
         modifier = Modifier.fillMaxSize(),

@@ -80,26 +80,6 @@ private fun GaleriaRoot(viewModel: GalleryViewModel) {
     val context = LocalContext.current
     val hasPermission by viewModel.hasPermission.collectAsState()
 
-    // Força o Android a redesenhar a janela sempre que o app volta pro primeiro plano. Em
-    // alguns aparelhos, depois de passar por certos fluxos do sistema (ex.: aplicar papel de
-    // parede), a tela volta preta com só os toques funcionando -- é um problema conhecido de
-    // renderização ao voltar de segundo plano, não específico dessa ou daquela tela do app, daí
-    // a proteção ficar aqui na raiz em vez de só numa tela específica.
-    DisposableEffect(Unit) {
-        val activity = context as? Activity
-        val lifecycleOwner = activity as? androidx.lifecycle.LifecycleOwner
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                activity?.window?.decorView?.let {
-                    it.invalidate()
-                    it.requestLayout()
-                }
-            }
-        }
-        lifecycleOwner?.lifecycle?.addObserver(observer)
-        onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
-    }
-
     // Verificação síncrona já na primeira composição (não dentro de um LaunchedEffect,
     // que só roda depois do primeiro frame desenhado). É isso que evitava o "flash" da
     // tela de permissão ao reabrir o app quando o acesso já havia sido concedido antes.

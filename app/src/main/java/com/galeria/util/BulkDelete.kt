@@ -37,7 +37,11 @@ fun rememberBulkDeleteAction(onCompleted: () -> Unit): (List<String>) -> Unit {
 
         if (mediaUris.isNotEmpty()) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val pendingIntent = MediaStore.createDeleteRequest(context.contentResolver, mediaUris)
+                // createTrashRequest (mover pra lixeira, reversível) -- não confundir com
+                // createDeleteRequest (exclusão permanente, sem volta). Antes esse "excluir"
+                // do dia a dia estava usando o de exclusão permanente por engano, então a
+                // lixeira nunca recebia nada e sempre aparecia vazia.
+                val pendingIntent = MediaStore.createTrashRequest(context.contentResolver, mediaUris, true)
                 launcher.launch(IntentSenderRequest.Builder(pendingIntent.intentSender).build())
             } else {
                 mediaUris.forEach { uri ->
