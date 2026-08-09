@@ -226,8 +226,13 @@ fun EditorScreen(
                     }
                 }
 
-                if (cropMode) {
-                    // Enquanto corta livremente, os botões de Aplicar/Cancelar já ficam sobre a
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(androidx.compose.material3.MaterialTheme.colorScheme.surface)
+                ) {
+                    if (cropMode) {
+                        // Enquanto corta livremente, os botões de Aplicar/Cancelar já ficam sobre a
                     // própria imagem (no FreeCropOverlay) — some com as abas embaixo pra não dar
                     // a entender que dá pra trocar de ferramenta no meio do corte.
                     Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
@@ -270,6 +275,7 @@ fun EditorScreen(
                         )
                         EditorTab.TEXTO -> TextoPanel(onAdd = { showTextDialog = true })
                     }
+                }
                 }
             }
         }
