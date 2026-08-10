@@ -5,9 +5,12 @@ import android.app.PendingIntent
 import android.content.ContentValues
 import android.content.Context
 import android.content.SharedPreferences
+import android.database.ContentObserver
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.content.ContentResolver
 import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
@@ -21,11 +24,14 @@ import com.galeria.util.SafUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -249,9 +255,54 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     fun getScrollPosition(scopeKey: String): Pair<Int, Int> = scrollPositions[scopeKey] ?: (0 to 0)
 
+    // Sinal "algo mudou no MediaStore" (screenshot, foto tirada pela câmera, arquivo apagado
+    // por outro app etc.) -- não carrega os dados aqui dentro, só avisa que precisa recarregar.
+    // O debounce(400) evita disparar loadPhotos() várias vezes seguidas quando o sistema manda
+    // uma rajada de notificações pra uma única operação (uma captura de tela, por exemplo,
+    // costuma gerar mais de um onChange: criação do registro + atualização depois que o
+    // arquivo termina de ser escrito).
+    private val mediaChangeSignal = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    private var mediaObserver: ContentObserver? = null
+
+    init {
+        viewModelScope.launch {
+            mediaChangeSignal.debounce(400).collect {
+                loadPhotos()
+            }
+        }
+    }
+
+    // Observa a galeria do sistema (MediaStore) pra saber, em tempo real, quando uma foto ou
+    // vídeo é adicionado, alterado ou removido por fora do nosso app -- é o que faz, por
+    // exemplo, um print de tela aparecer na grade na hora, sem precisar reabrir o app.
+    // Chamado só depois da permissão de mídia concedida (registrar antes disso não tem
+    // utilidade, já que qualquer loadPhotos() disparado falharia por falta de permissão).
+    private fun registerMediaObserver() {
+        if (mediaObserver != null) return
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                mediaChangeSignal.tryEmit(Unit)
+            }
+        }
+        mediaObserver = observer
+        val resolver = app.contentResolver
+        resolver.registerContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observer)
+        resolver.registerContentObserver(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, observer)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        mediaObserver?.let { app.contentResolver.unregisterContentObserver(it) }
+        mediaObserver = null
+    }
+
     fun onPermissionGranted() {
         _hasPermission.value = true
         loadPhotos()
+        registerMediaObserver()
     }
 
     fun loadPhotos() {
