@@ -58,7 +58,16 @@ fun TrashScreen(
     var photoToDelete by remember { mutableStateOf<Photo?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
+    var confirmEmptyTrash by remember { mutableStateOf(false) }
+
     val deleteLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { viewModel.loadTrash() }
+
+    // Mesma ideia do delete de uma foto só, mas mandando todos os URIs da lixeira de uma vez
+    // pro createDeleteRequest -- o sistema mostra uma única confirmação para o lote inteiro,
+    // em vez de precisarmos chamar a API uma vez por foto.
+    val emptyTrashLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { viewModel.loadTrash() }
 
@@ -83,6 +92,13 @@ fun TrashScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
+                    }
+                },
+                actions = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && trashed.isNotEmpty()) {
+                        IconButton(onClick = { confirmEmptyTrash = true }) {
+                            Icon(Icons.Filled.DeleteForever, contentDescription = "Esvaziar lixeira")
+                        }
                     }
                 }
             )
@@ -162,6 +178,32 @@ fun TrashScreen(
             },
             dismissButton = {
                 TextButton(onClick = { photoToDelete = null }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    if (confirmEmptyTrash) {
+        AlertDialog(
+            onDismissRequest = { confirmEmptyTrash = false },
+            title = { Text("Esvaziar lixeira") },
+            text = {
+                Text(
+                    "Esta ação não pode ser desfeita. Deseja excluir para sempre as " +
+                        "${trashed.size} fotos da lixeira?"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmEmptyTrash = false
+                    val pendingIntent = android.provider.MediaStore.createDeleteRequest(
+                        context.contentResolver,
+                        trashed.map { it.uri }
+                    )
+                    emptyTrashLauncher.launch(IntentSenderRequest.Builder(pendingIntent.intentSender).build())
+                }) { Text("Excluir tudo") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmEmptyTrash = false }) { Text("Cancelar") }
             }
         )
     }

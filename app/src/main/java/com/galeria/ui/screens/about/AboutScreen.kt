@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Divider
@@ -47,10 +46,8 @@ import com.galeria.R
 // Preencha com as informações reais antes de publicar. Deixei tudo reunido aqui em cima pra
 // não precisar caçar espalhado pelo código.
 // --------------------------------------------------------------------------------------------
-private const val DEVELOPER_NAME = "Seu nome aqui"
-private const val SUPPORT_EMAIL = "seuemail@exemplo.com"
-// Troque pelo link real, por exemplo uma página do GitHub Pages do repositório do app.
-private const val PRIVACY_POLICY_URL = "https://github.com/SEU_USUARIO/Galeria"
+private const val DEVELOPER_NAME = "Natural Homeostase"
+private const val SUPPORT_EMAIL = "natural.homeostase@gmail.com"
 private val TELEGRAM_URL: String? = null // ex.: "https://t.me/seu_usuario" -- deixe null se não usar
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -123,15 +120,6 @@ fun AboutScreen(onBack: () -> Unit) {
                     )
                 }
                 Divider()
-            }
-
-            item {
-                ListItem(
-                    headlineContent = { Text("Política de privacidade") },
-                    supportingContent = { Text("O app não coleta nem envia suas fotos para a internet") },
-                    leadingContent = { Icon(Icons.Filled.PrivacyTip, contentDescription = null) },
-                    modifier = Modifier.clickable { openUrl(PRIVACY_POLICY_URL) }
-                )
             }
 
             item {

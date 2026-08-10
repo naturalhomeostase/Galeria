@@ -10,6 +10,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,8 +58,15 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
     val bottomBarOpaque by viewModel.bottomBarOpaque.collectAsState()
     val selectionModeActive by viewModel.selectionModeActive.collectAsState()
 
-    // Shared holder for the photo list currently being viewed in the pager
-    var viewerUris by remember { mutableStateOf(listOf<String>()) }
+    // Shared holder for the photo list currently being viewed in the pager. Usa
+    // rememberSaveable (não remember comum) porque "Definir como papel de parede" tira o app
+    // de primeiro plano por um instante em vários aparelhos (confirmação do sistema para a
+    // tela de bloqueio); se o Android reaproveita esse momento pra recompor a Activity, um
+    // remember comum perderia essa lista e o visualizador voltava sem nenhuma foto pra
+    // mostrar, exigindo sair e reabrir a foto pra "reiniciar" o estado.
+    var viewerUris by rememberSaveable(
+        stateSaver = listSaver(save = { it }, restore = { it })
+    ) { mutableStateOf(listOf<String>()) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         NavHost(
