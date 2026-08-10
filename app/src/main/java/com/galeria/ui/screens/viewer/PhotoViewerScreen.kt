@@ -565,22 +565,6 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
         model = ImageRequest.Builder(context)
             .data(Uri.parse(uriStr))
             .crossfade(200)
-            // Bitmaps de hardware (o padrão do Coil a partir do Android 8) vivem direto na
-            // memória da GPU e podem ficar inválidos depois de certas operações do sistema
-            // que mexem no compositor gráfico -- como definir papel de parede. Quando isso
-            // acontece, a foto some (ou pisca e some) mas o resto da UI continua normal, já
-            // que ícones são redesenhados a cada frame em vez de reaproveitar um bitmap
-            // guardado.
-            .allowHardware(false)
-            // Sem cache de memória pra essa tela específica: uma primeira tentativa usando o
-            // ciclo de vida da Activity pra "forçar recarregar ao voltar" não funcionava,
-            // porque definir papel de parede agora acontece TODO dentro do app (é outra tela
-            // de navegação, não outra Activity) -- então a Activity nunca sai de "resumed" de
-            // verdade, e aquele gatilho nunca disparava. Desativando o cache por completo,
-            // toda vez que essa imagem aparece ela é decodificada do zero, sem chance de
-            // reaproveitar algo que ficou inválido nesse meio tempo. Custo desprezível aqui,
-            // já que só mostra uma foto em tela cheia por vez, não uma grade inteira.
-            .memoryCachePolicy(coil.request.CachePolicy.DISABLED)
             .build(),
         contentDescription = null,
         modifier = Modifier.fillMaxSize(),
