@@ -2,6 +2,7 @@ package com.galeria
 
 import android.Manifest
 import android.app.Activity
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -38,9 +39,29 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentActivity
+import com.galeria.data.model.Photo
 import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.navigation.GaleriaNavGraph
+import com.galeria.ui.screens.picker.ExternalPickerScreen
 import com.galeria.ui.theme.GaleriaTheme
+
+// Representa um pedido de "me dê uma foto/vídeo" vindo de outro app (upload num site pelo
+// navegador, anexo de e-mail, etc.), recebido via ACTION_GET_CONTENT ou ACTION_PICK.
+private data class PickerRequest(val mimeType: String, val allowMultiple: Boolean) {
+    fun matches(photo: Photo): Boolean = when {
+        mimeType == "*/*" -> true
+        mimeType.endsWith("/*") -> photo.mimeType.startsWith(mimeType.removeSuffix("*"))
+        else -> photo.mimeType.equals(mimeType, ignoreCase = true)
+    }
+}
+
+private fun resolvePickerRequest(intent: Intent?): PickerRequest? {
+    val action = intent?.action ?: return null
+    if (action != Intent.ACTION_GET_CONTENT && action != Intent.ACTION_PICK) return null
+    val allowMultiple = action == Intent.ACTION_GET_CONTENT &&
+        intent.getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, false)
+    return PickerRequest(mimeType = intent.type ?: "*/*", allowMultiple = allowMultiple)
+}
 
 class MainActivity : FragmentActivity() {
 
@@ -52,6 +73,7 @@ class MainActivity : FragmentActivity() {
         // ainda está inicializando, em vez da tela branca padrão do Android.
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        val pickerRequest = resolvePickerRequest(intent)
         setContent {
             val themeMode by viewModel.themeMode.collectAsState()
             val darkTheme = when (themeMode) {
@@ -61,10 +83,43 @@ class MainActivity : FragmentActivity() {
             }
             GaleriaTheme(darkTheme = darkTheme) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    GaleriaRoot(viewModel = viewModel)
+                    GaleriaRoot(
+                        viewModel = viewModel,
+                        pickerRequest = pickerRequest,
+                        onPickResult = { uris -> finishWithPickedUris(uris) },
+                        onPickCancel = {
+                            setResult(Activity.RESULT_CANCELED)
+                            finish()
+                        }
+                    )
                 }
             }
         }
+    }
+
+    // Monta o resultado no formato que quem pediu a foto espera de volta: um único URI em
+    // "data" pra seleção simples, ou um ClipData com todos os itens pra seleção múltipla
+    // (é assim que o seletor de fotos do próprio sistema Android faz). FLAG_GRANT_READ_URI_PERMISSION
+    // é o que permite ao app que chamou o Galeria ler essas fotos mesmo sem ter permissão de
+    // armazenamento -- sem essa flag, o outro app receberia o URI mas não conseguiria abri-lo.
+    private fun finishWithPickedUris(uris: List<Uri>) {
+        if (uris.isEmpty()) {
+            setResult(Activity.RESULT_CANCELED)
+            finish()
+            return
+        }
+        val resultIntent = Intent().apply {
+            if (uris.size == 1) {
+                data = uris.first()
+            } else {
+                clipData = ClipData.newUri(contentResolver, "Imagens selecionadas", uris.first()).apply {
+                    for (i in 1 until uris.size) addItem(ClipData.Item(uris[i]))
+                }
+            }
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        setResult(Activity.RESULT_OK, resultIntent)
+        finish()
     }
 }
 
@@ -76,7 +131,12 @@ private fun requiredMediaPermissions(): Array<String> =
     }
 
 @Composable
-private fun GaleriaRoot(viewModel: GalleryViewModel) {
+private fun GaleriaRoot(
+    viewModel: GalleryViewModel,
+    pickerRequest: PickerRequest?,
+    onPickResult: (List<Uri>) -> Unit,
+    onPickCancel: () -> Unit
+) {
     val context = LocalContext.current
     val hasPermission by viewModel.hasPermission.collectAsState()
 
@@ -118,7 +178,17 @@ private fun GaleriaRoot(viewModel: GalleryViewModel) {
         requiredMediaPermissions().none { ActivityCompat.shouldShowRequestPermissionRationale(activity, it) }
 
     if (hasPermission || initiallyGranted) {
-        GaleriaNavGraph(viewModel = viewModel)
+        if (pickerRequest != null) {
+            ExternalPickerScreen(
+                viewModel = viewModel,
+                allowMultiple = pickerRequest.allowMultiple,
+                filter = { photo -> pickerRequest.matches(photo) },
+                onPick = onPickResult,
+                onCancel = onPickCancel
+            )
+        } else {
+            GaleriaNavGraph(viewModel = viewModel)
+        }
     } else {
         PermissionRequestScreen(
             permanentlyDenied = permanentlyDenied,

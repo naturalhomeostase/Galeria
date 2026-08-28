@@ -27,6 +27,43 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!--
+                Faz o Galeria aparecer como opção quando outro app pede uma imagem ou vídeo
+                (upload em site pelo navegador, anexo de e-mail, etc.). Cobre tanto
+                ACTION_GET_CONTENT (o mais comum -- ex.: <input type="file"> numa página web)
+                quanto ACTION_PICK (usado por alguns apps mais antigos).
+
+                Observação: no Chrome, em Android 13+, um <input type="file" accept="image/*">
+                simples costuma abrir direto o seletor de fotos do próprio Google (o "Photo
+                Picker" do sistema), sem passar pela lista de apps -- isso é uma escolha do
+                Chrome/Android, não algo que dê pra contornar por fora do app. Mas em outros
+                navegadores, apps de e-mail, WhatsApp, gerenciadores de arquivo e em
+                uploads com "accept" mais genérico, o Galeria vai aparecer normalmente na
+                lista de opções.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.GET_CONTENT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.OPENABLE" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.GET_CONTENT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.OPENABLE" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.PICK" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.PICK" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>
