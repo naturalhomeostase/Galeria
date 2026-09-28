@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
@@ -115,7 +116,8 @@ fun PhotoViewerScreen(
     onBack: () -> Unit,
     onEdit: (String) -> Unit,
     onAddToAlbum: (String) -> Unit,
-    onSetWallpaper: (String) -> Unit
+    onSetWallpaper: (String) -> Unit,
+    onCompressVideo: (String) -> Unit
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -246,6 +248,11 @@ fun PhotoViewerScreen(
                 if (!isCurrentVideo) {
                     IconButton(onClick = { currentUri?.let(onSetWallpaper) }) {
                         Icon(Icons.Filled.Wallpaper, contentDescription = "Usar como papel de parede", tint = Color.White)
+                    }
+                }
+                if (isCurrentVideo) {
+                    IconButton(onClick = { currentUri?.let(onCompressVideo) }) {
+                        Icon(Icons.Filled.Compress, contentDescription = "Comprimir vídeo", tint = Color.White)
                     }
                 }
                 IconButton(onClick = {

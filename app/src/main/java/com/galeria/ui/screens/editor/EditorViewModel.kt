@@ -14,6 +14,8 @@ import androidx.lifecycle.viewModelScope
 import com.galeria.util.FilterPreset
 import com.galeria.util.ImageEditUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -31,7 +33,15 @@ data class EditorUiState(
     val filter: FilterPreset = FilterPreset.NORMAL,
     val strokes: List<DrawStroke> = emptyList(),
     val textOverlays: List<TextOverlay> = emptyList(),
-    val saved: Boolean = false
+    val saved: Boolean = false,
+    // --- Compressão ---
+    val originalSizeBytes: Long? = null,
+    val compressQuality: Int = 92,
+    // null = mantém as dimensões originais; caso contrário, o maior lado é reduzido pra
+    // esse valor (em pixels) ao salvar.
+    val maxDimensionOption: Int? = null,
+    val estimatedSizeBytes: Long? = null,
+    val estimating: Boolean = false
 )
 
 class EditorViewModel(application: Application) : AndroidViewModel(application) {
@@ -39,13 +49,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private val _state = MutableStateFlow(EditorUiState())
     val state: StateFlow<EditorUiState> = _state
 
+    private var estimateJob: Job? = null
+
     fun load(uri: Uri) {
         if (_state.value.baseBitmap != null) return
         viewModelScope.launch {
-            val bmp = withContext(Dispatchers.IO) {
-                ImageEditUtils.loadBitmap(getApplication(), uri)
+            val (bmp, originalSize) = withContext(Dispatchers.IO) {
+                ImageEditUtils.loadBitmap(getApplication(), uri) to
+                    ImageEditUtils.getFileSizeBytes(getApplication(), uri)
             }
-            _state.value = _state.value.copy(baseBitmap = bmp, loading = false)
+            _state.value = _state.value.copy(baseBitmap = bmp, loading = false, originalSizeBytes = originalSize)
+            scheduleEstimate()
         }
     }
 
@@ -108,51 +122,90 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun setCompressQuality(v: Int) {
+        _state.value = _state.value.copy(compressQuality = v.coerceIn(10, 100))
+        scheduleEstimate()
+    }
+
+    fun setMaxDimension(v: Int?) {
+        _state.value = _state.value.copy(maxDimensionOption = v)
+        scheduleEstimate()
+    }
+
+    // Recalcula o tamanho estimado do arquivo final (com a qualidade/redimensionamento
+    // escolhidos) sempre que a pessoa mexe no slider ou troca a opção de tamanho -- com um
+    // pequeno atraso pra não recomprimir a cada milímetro de arraste do slider, só quando a
+    // pessoa pausa por um instante.
+    private fun scheduleEstimate() {
+        estimateJob?.cancel()
+        estimateJob = viewModelScope.launch {
+            delay(250)
+            val s = _state.value
+            val base = s.baseBitmap ?: return@launch
+            _state.value = _state.value.copy(estimating = true)
+            val size = withContext(Dispatchers.Default) {
+                val composed = composeFinalBitmap(s, base)
+                val resized = s.maxDimensionOption?.let { ImageEditUtils.resizeToMaxDimension(composed, it) } ?: composed
+                ImageEditUtils.jpegSizeBytes(resized, s.compressQuality)
+            }
+            _state.value = _state.value.copy(estimatedSizeBytes = size, estimating = false)
+        }
+    }
+
+    // Aplica ajustes de cor, traços e textos por cima do bitmap base -- é exatamente o que
+    // vai pro arquivo final, então tanto o save() quanto a estimativa de tamanho usam esta
+    // mesma função, garantindo que o número mostrado na aba de compressão bate com o
+    // resultado real.
+    private fun composeFinalBitmap(s: EditorUiState, base: Bitmap): Bitmap {
+        val result = Bitmap.createBitmap(base.width, base.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(result)
+
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val combined = ImageEditUtils.buildColorMatrix(s.brightness, s.contrast, s.saturation)
+        combined.postConcat(s.filter.matrix())
+        paint.colorFilter = ColorMatrixColorFilter(combined)
+        canvas.drawBitmap(base, 0f, 0f, paint)
+
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+        s.strokes.forEach { stroke ->
+            strokePaint.color = stroke.colorArgb
+            strokePaint.strokeWidth = stroke.widthFraction * base.width
+            val path = android.graphics.Path()
+            stroke.points.forEachIndexed { i, p ->
+                val x = p.x * base.width
+                val y = p.y * base.height
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            canvas.drawPath(path, strokePaint)
+        }
+
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        s.textOverlays.forEach { overlay ->
+            textPaint.color = overlay.colorArgb
+            textPaint.textSize = overlay.sizeFraction * base.width
+            canvas.drawText(
+                overlay.text,
+                overlay.xFraction * base.width,
+                overlay.yFraction * base.height,
+                textPaint
+            )
+        }
+        return result
+    }
+
     fun save(onSaved: (Uri?) -> Unit) {
         val s = _state.value
         val base = s.baseBitmap ?: return
         viewModelScope.launch {
             val resultUri = withContext(Dispatchers.Default) {
-                val result = Bitmap.createBitmap(base.width, base.height, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(result)
-
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-                val combined = ImageEditUtils.buildColorMatrix(s.brightness, s.contrast, s.saturation)
-                combined.postConcat(s.filter.matrix())
-                paint.colorFilter = ColorMatrixColorFilter(combined)
-                canvas.drawBitmap(base, 0f, 0f, paint)
-
-                val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    style = Paint.Style.STROKE
-                    strokeCap = Paint.Cap.ROUND
-                    strokeJoin = Paint.Join.ROUND
-                }
-                s.strokes.forEach { stroke ->
-                    strokePaint.color = stroke.colorArgb
-                    strokePaint.strokeWidth = stroke.widthFraction * base.width
-                    val path = android.graphics.Path()
-                    stroke.points.forEachIndexed { i, p ->
-                        val x = p.x * base.width
-                        val y = p.y * base.height
-                        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                    }
-                    canvas.drawPath(path, strokePaint)
-                }
-
-                val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-                s.textOverlays.forEach { overlay ->
-                    textPaint.color = overlay.colorArgb
-                    textPaint.textSize = overlay.sizeFraction * base.width
-                    canvas.drawText(
-                        overlay.text,
-                        overlay.xFraction * base.width,
-                        overlay.yFraction * base.height,
-                        textPaint
-                    )
-                }
-
+                val composed = composeFinalBitmap(s, base)
+                val finalBitmap = s.maxDimensionOption?.let { ImageEditUtils.resizeToMaxDimension(composed, it) } ?: composed
                 val name = "galeria_edit_${System.currentTimeMillis()}.jpg"
-                ImageEditUtils.saveToGallery(getApplication(), result, name)
+                ImageEditUtils.saveToGallery(getApplication(), finalBitmap, name, quality = s.compressQuality)
             }
             _state.value = _state.value.copy(saved = true)
             onSaved(resultUri)

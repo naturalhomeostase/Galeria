@@ -39,6 +39,7 @@ import com.galeria.ui.screens.secret.SetupSecretScreen
 import com.galeria.ui.screens.settings.SettingsScreen
 import com.galeria.ui.screens.trash.TrashScreen
 import com.galeria.ui.screens.viewer.PhotoViewerScreen
+import com.galeria.ui.screens.videocompress.VideoCompressScreen
 import com.galeria.ui.screens.wallpaper.WallpaperPreviewScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -234,7 +235,25 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                         },
                         onSetWallpaper = { uri ->
                             navController.navigate("wallpaper/${encode(uri)}")
+                        },
+                        onCompressVideo = { uri ->
+                            navController.navigate("compressVideo/${encode(uri)}")
                         }
+                    )
+                }
+
+                composable(
+                    route = "compressVideo/{uri}",
+                    arguments = listOf(navArgument("uri") { type = NavType.StringType })
+                ) { entry ->
+                    val uriStr = decode(entry.arguments?.getString("uri") ?: "")
+                    VideoCompressScreen(
+                        uriString = uriStr,
+                        onDone = {
+                            viewModel.loadPhotos()
+                            navController.popBackStack()
+                        },
+                        onCancel = { navController.popBackStack() }
                     )
                 }
 

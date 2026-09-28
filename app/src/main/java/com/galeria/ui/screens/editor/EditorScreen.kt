@@ -65,11 +65,12 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.galeria.util.FileUtils
 import com.galeria.util.FilterPreset
 import kotlin.math.max
 import kotlin.math.min
 
-private enum class EditorTab(val label: String) { AJUSTAR("Ajustar"), COR("Cor"), DESENHAR("Desenhar"), TEXTO("Texto") }
+private enum class EditorTab(val label: String) { AJUSTAR("Ajustar"), COR("Cor"), DESENHAR("Desenhar"), TEXTO("Texto"), COMPRIMIR("Comprimir") }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -274,6 +275,15 @@ fun EditorScreen(
                             onUndo = { viewModel.undoStroke() }
                         )
                         EditorTab.TEXTO -> TextoPanel(onAdd = { showTextDialog = true })
+                        EditorTab.COMPRIMIR -> ComprimirPanel(
+                            originalSizeBytes = state.originalSizeBytes,
+                            estimatedSizeBytes = state.estimatedSizeBytes,
+                            estimating = state.estimating,
+                            quality = state.compressQuality,
+                            maxDimensionOption = state.maxDimensionOption,
+                            onQualityChange = viewModel::setCompressQuality,
+                            onMaxDimensionChange = viewModel::setMaxDimension
+                        )
                     }
                 }
                 }
@@ -532,6 +542,85 @@ private fun TextoPanel(onAdd: () -> Unit) {
         Button(onClick = onAdd) {
             Icon(Icons.Filled.TextFields, contentDescription = null)
             Text("  Adicionar texto")
+        }
+    }
+}
+
+/**
+ * Aba de compressão: reduz a qualidade JPEG e/ou a resolução da imagem antes de salvar.
+ * O tamanho estimado é recalculado (com um pequeno atraso) toda vez que a pessoa mexe no
+ * slider ou troca a opção de redimensionamento, comprimindo a imagem em memória sem gravar
+ * nada em disco -- só pra mostrar a previsão antes de confirmar com "Salvar".
+ */
+@Composable
+private fun ComprimirPanel(
+    originalSizeBytes: Long?,
+    estimatedSizeBytes: Long?,
+    estimating: Boolean,
+    quality: Int,
+    maxDimensionOption: Int?,
+    onQualityChange: (Int) -> Unit,
+    onMaxDimensionChange: (Int?) -> Unit
+) {
+    Column(modifier = Modifier.padding(12.dp)) {
+        Text("Qualidade (${quality}%)", style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
+        Slider(
+            value = quality.toFloat(),
+            onValueChange = { onQualityChange(it.toInt()) },
+            valueRange = 10f..100f
+        )
+
+        Text(
+            "Redimensionar",
+            style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(vertical = 8.dp)
+        ) {
+            listOf(null to "Original", 1920 to "1920px", 1280 to "1280px", 1024 to "1024px").forEach { (value, label) ->
+                val selected = value == maxDimensionOption
+                Text(
+                    text = label,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (selected) androidx.compose.material3.MaterialTheme.colorScheme.primary
+                            else androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        .clickableSimple { onMaxDimensionChange(value) }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    color = if (selected) Color.White else Color.Unspecified
+                )
+            }
+        }
+
+        Column(modifier = Modifier.padding(top = 8.dp)) {
+            if (originalSizeBytes != null) {
+                Text(
+                    "Tamanho original: ${FileUtils.formatSize(originalSizeBytes)}",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            when {
+                estimating -> Text(
+                    "Calculando tamanho estimado…",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                estimatedSizeBytes != null -> {
+                    val reduction = originalSizeBytes?.takeIf { it > 0 }
+                        ?.let { orig -> (100 - (estimatedSizeBytes * 100 / orig)).coerceIn(0, 100) }
+                    Text(
+                        "Tamanho estimado: ${FileUtils.formatSize(estimatedSizeBytes)}" +
+                            (reduction?.let { " (-$it%)" } ?: ""),
+                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
     }
 }

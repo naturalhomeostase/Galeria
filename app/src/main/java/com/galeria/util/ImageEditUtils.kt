@@ -10,8 +10,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import androidx.exifinterface.media.ExifInterface
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import kotlin.math.max
 
 object ImageEditUtils {
 
@@ -78,6 +81,47 @@ object ImageEditUtils {
         return Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
     }
 
+    // Reduz a imagem proporcionalmente até que a maior dimensão fique dentro de
+    // maxDimension. Devolve o próprio bitmap sem mudanças se ele já for menor que isso --
+    // comprimir "pra cima" (aumentar) não faz sentido aqui.
+    fun resizeToMaxDimension(bitmap: Bitmap, maxDimension: Int): Bitmap {
+        val largestSide = max(bitmap.width, bitmap.height)
+        if (largestSide <= maxDimension) return bitmap
+        val scale = maxDimension.toFloat() / largestSide
+        val newWidth = (bitmap.width * scale).toInt().coerceAtLeast(1)
+        val newHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+    }
+
+    // Comprime em memória sem gravar nada em disco -- usado só pra estimar o tamanho final
+    // enquanto a pessoa ainda está ajustando o slider de qualidade, antes de confirmar.
+    fun jpegSizeBytes(bitmap: Bitmap, quality: Int): Long {
+        val out = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
+        return out.size().toLong()
+    }
+
+    // Tamanho do arquivo original (antes de qualquer edição), usado só pra mostrar o
+    // "antes/depois" na aba de compressão. Tenta a coluna SIZE do MediaStore primeiro (mais
+    // barato) e cai pro tamanho real do descritor do arquivo se a coluna vier vazia.
+    fun getFileSizeBytes(context: Context, uri: Uri): Long? {
+        try {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (sizeIndex != -1 && cursor.moveToFirst()) {
+                    val size = cursor.getLong(sizeIndex)
+                    if (size > 0) return size
+                }
+            }
+        } catch (_: Exception) {
+        }
+        return try {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length.takeIf { len -> len >= 0 } }
+        } catch (_: IOException) {
+            null
+        }
+    }
+
     fun buildColorMatrix(brightness: Float, contrast: Float, saturation: Float): ColorMatrix {
         val satMatrix = ColorMatrix().apply { setSaturation(saturation) }
 
@@ -95,7 +139,7 @@ object ImageEditUtils {
         return contrastMatrix
     }
 
-    fun saveToGallery(context: Context, bitmap: Bitmap, displayName: String): Uri? {
+    fun saveToGallery(context: Context, bitmap: Bitmap, displayName: String, quality: Int = 92): Uri? {
         val resolver = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
@@ -109,7 +153,7 @@ object ImageEditUtils {
         val uri = resolver.insert(collection, values) ?: return null
 
         resolver.openOutputStream(uri)?.use { out ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(1, 100), out)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
