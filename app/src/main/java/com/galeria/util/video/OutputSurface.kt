@@ -3,6 +3,8 @@ package com.galeria.util.video
 import android.graphics.SurfaceTexture
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
+import android.os.Handler
+import android.os.Looper
 import android.view.Surface
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -78,7 +80,11 @@ class OutputSurface : SurfaceTexture.OnFrameAvailableListener {
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
 
         surfaceTexture = SurfaceTexture(textureId)
-        surfaceTexture.setOnFrameAvailableListener(this)
+        // Sempre entrega o aviso de "novo quadro pronto" através da fila de mensagens da
+        // thread principal, não importa em qual thread este OutputSurface foi criado. Isso
+        // evita um travamento: sem isso, se o construtor rodasse numa thread de trabalho sem
+        // fila de mensagens própria, o aviso simplesmente nunca teria como ser entregue.
+        surfaceTexture.setOnFrameAvailableListener(this, Handler(Looper.getMainLooper()))
         surface = Surface(surfaceTexture)
     }
 

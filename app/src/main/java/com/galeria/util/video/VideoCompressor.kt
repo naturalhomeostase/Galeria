@@ -13,8 +13,11 @@ import android.os.Environment
 import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import java.nio.ByteBuffer
+import java.util.concurrent.Executors
 
 data class VideoCompressResult(val uri: Uri?, val error: String? = null)
 
@@ -49,6 +52,33 @@ object VideoCompressor {
      * (não-nuláveis), criados logo após cada recurso ser aberto.
      */
     suspend fun compress(
+        context: Context,
+        sourceUri: Uri,
+        targetMaxDimension: Int,
+        videoBitrate: Int,
+        onProgress: (Float) -> Unit
+    ): VideoCompressResult {
+        // Todo o trabalho roda numa única thread de segundo plano fixa (nunca a thread
+        // principal, e nunca um pool de threads variável) -- por dois motivos:
+        // 1) O laço de decodificação/codificação faz chamadas bloqueantes; rodar isso na
+        //    thread principal trava a UI e, pior, impede o aviso de "novo quadro pronto" do
+        //    decoder (que depende da fila de mensagens da thread principal) de ser entregue.
+        // 2) O contexto gráfico EGL usado pra desenhar cada quadro só é válido na thread
+        //    física em que foi criado -- um pool de threads (como Dispatchers.Default) pode
+        //    retomar a corrotina numa thread diferente a cada pausa, corrompendo esse
+        //    contexto. Uma thread fixa dedicada evita isso.
+        val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "galeria-video-compress") }
+        val dispatcher = executor.asCoroutineDispatcher()
+        try {
+            return withContext(dispatcher) {
+                compressOnCurrentThread(context, sourceUri, targetMaxDimension, videoBitrate, onProgress)
+            }
+        } finally {
+            dispatcher.close()
+        }
+    }
+
+    private suspend fun compressOnCurrentThread(
         context: Context,
         sourceUri: Uri,
         targetMaxDimension: Int,
