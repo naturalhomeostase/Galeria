@@ -122,7 +122,6 @@ object VideoCompressor {
                 setInteger(MediaFormat.KEY_BIT_RATE, videoBitrate)
                 setInteger(MediaFormat.KEY_FRAME_RATE, 30)
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, IFRAME_INTERVAL_SECONDS)
-                if (rotation != 0) setInteger(KEY_ROTATION, rotation)
             }
 
             val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
@@ -149,6 +148,12 @@ object VideoCompressor {
             pfdHolder = pfd
             val muxer = MediaMuxer(pfd.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
             muxerHolder = muxer
+            // É AQUI que a rotação do vídeo original (ex.: gravado com o celular na
+            // vertical) precisa ser reaplicada -- e não no formato do encoder, que
+            // simplesmente ignora essa informação. setOrientationHint grava a mesma marcação
+            // de rotação no arquivo novo, então quem for assistir vê na orientação certa,
+            // mesmo os pixels tendo sido codificados "deitados".
+            if (rotation != 0) muxer.setOrientationHint(rotation)
 
             // O áudio original é copiado à parte, amostra por amostra, sem recodificar --
             // só depois que o muxer já estiver de pé (ele só começa quando o encoder de
