@@ -175,7 +175,7 @@ fun AlbumDetailScreen(
                                 item(span = { GridItemSpan(maxLineSpan) }) {
                                     MonthHeader(group.label, group.photos.size)
                                 }
-                                items(group.photos, key = { it.id }) { photo ->
+                                items(group.photos, key = { it.uri.toString() }) { photo ->
                                     val uriStr = photo.uri.toString()
                                     PhotoGridItem(
                                         photo = photo,
@@ -198,7 +198,7 @@ fun AlbumDetailScreen(
                                 }
                             }
                         } else {
-                            items(flatPhotos, key = { it.id }) { photo ->
+                            items(flatPhotos, key = { it.uri.toString() }) { photo ->
                                 val uriStr = photo.uri.toString()
                                 PhotoGridItem(
                                     photo = photo,

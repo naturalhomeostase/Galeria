@@ -2,6 +2,7 @@ package com.galeria.ui.screens.videocompress
 
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +32,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,11 +43,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.galeria.util.ImageEditUtils
 import com.galeria.util.FileUtils
 import com.galeria.util.video.VideoCompressor
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -73,6 +78,19 @@ fun VideoCompressScreen(
     var quality by remember { mutableStateOf(VideoQuality.MEDIA) }
     var compressing by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
+    var compressJob by remember { mutableStateOf<Job?>(null) }
+
+    // Mantém a tela ligada enquanto comprime: se a tela apagar no meio de um vídeo longo, o
+    // Android pode congelar/matar o app e deixar um arquivo incompleto pra trás.
+    val view = LocalView.current
+    DisposableEffect(compressing) {
+        view.keepScreenOn = compressing
+        onDispose { view.keepScreenOn = false }
+    }
+
+    // Voltar durante a compressão cancela a compressão (o arquivo parcial é apagado), em vez de
+    // simplesmente fechar a tela sem avisar.
+    BackHandler(enabled = compressing) { compressJob?.cancel() }
 
     LaunchedEffect(uriString) {
         originalSizeBytes = ImageEditUtils.getFileSizeBytes(context, Uri.parse(uriString))
@@ -83,8 +101,8 @@ fun VideoCompressScreen(
             TopAppBar(
                 title = { Text("Comprimir vídeo") },
                 navigationIcon = {
-                    IconButton(onClick = onCancel, enabled = !compressing) {
-                        Icon(Icons.Filled.Close, contentDescription = "Cancelar")
+                    IconButton(onClick = { if (compressing) compressJob?.cancel() else onCancel() }) {
+                        Icon(Icons.Filled.Close, contentDescription = if (compressing) "Cancelar compressão" else "Fechar")
                     }
                 }
             )
@@ -163,24 +181,31 @@ fun VideoCompressScreen(
                 onClick = {
                     compressing = true
                     progress = 0f
-                    scope.launch {
-                        val result = VideoCompressor.compress(
-                            context = context,
-                            sourceUri = Uri.parse(uriString),
-                            targetMaxDimension = quality.maxDimension,
-                            videoBitrate = quality.bitrate,
-                            onProgress = { progress = it }
-                        )
-                        compressing = false
-                        if (result.uri != null) {
-                            Toast.makeText(context, "Vídeo comprimido salvo na galeria", Toast.LENGTH_SHORT).show()
-                            onDone()
-                        } else {
-                            Toast.makeText(
-                                context,
-                                result.error ?: "Não foi possível comprimir este vídeo",
-                                Toast.LENGTH_LONG
-                            ).show()
+                    compressJob = scope.launch {
+                        try {
+                            val result = VideoCompressor.compress(
+                                context = context,
+                                sourceUri = Uri.parse(uriString),
+                                targetMaxDimension = quality.maxDimension,
+                                videoBitrate = quality.bitrate,
+                                onProgress = { progress = it }
+                            )
+                            if (result.uri != null) {
+                                Toast.makeText(context, "Vídeo comprimido salvo na galeria", Toast.LENGTH_SHORT).show()
+                                onDone()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    result.error ?: "Não foi possível comprimir este vídeo",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        } catch (e: CancellationException) {
+                            Toast.makeText(context, "Compressão cancelada", Toast.LENGTH_SHORT).show()
+                            throw e
+                        } finally {
+                            compressing = false
+                            compressJob = null
                         }
                     }
                 },

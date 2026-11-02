@@ -19,9 +19,15 @@ import com.galeria.GaleriaApplication
 import com.galeria.data.model.AlbumEntity
 import com.galeria.data.model.Photo
 import com.galeria.data.model.SafFolderEntity
+import com.galeria.data.repository.UnlockResult
 import com.galeria.util.DateUtils
 import com.galeria.util.SafUtils
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.BufferOverflow
@@ -33,6 +39,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -88,11 +95,55 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private val prefs: SharedPreferences =
         application.getSharedPreferences("galeria_prefs", Context.MODE_PRIVATE)
 
+    // Lista completa vinda do MediaStore/SAF, SEM nenhum filtro. Só uso interno (resolver as
+    // fotos de um álbum, renomear pasta no disco...). O que as telas enxergam é `allPhotos`.
     private val _allPhotos = MutableStateFlow<List<Photo>>(emptyList())
-    val allPhotos: StateFlow<List<Photo>> = _allPhotos
+
+    // URIs de fotos que estão em algum álbum secreto. null = ainda não carregou do banco; nesse
+    // intervalo `allPhotos` fica vazia em vez de mostrar (por um instante) fotos que deveriam
+    // estar escondidas.
+    val secretPhotoUris: StateFlow<Set<String>?> = app.albumRepository.getSecretPhotoUris()
+        .map<List<String>, Set<String>?> { it.toHashSet() }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    // Fotos que todas as telas "normais" enxergam (linha do tempo, favoritos, pastas do
+    // aparelho, arquivos grandes, seletor de fotos...): tudo, menos o que está num álbum
+    // secreto. Quem precisa das fotos do cofre as resolve por resolvePhotos(), que usa a lista
+    // completa e só é alcançável de dentro do álbum secreto, depois de desbloquear.
+    val allPhotos: StateFlow<List<Photo>> = combine(_allPhotos, secretPhotoUris) { photos, secret ->
+        when {
+            secret == null -> emptyList()
+            secret.isEmpty() -> photos
+            else -> photos.filter { it.uri.toString() !in secret }
+        }
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // --- Cofre (álbuns secretos) ---
+    //
+    // Fica desbloqueado só enquanto o usuário está dentro da área do cofre: sair dela (voltar
+    // pra lista de álbuns, ir pra outra aba) ou sair do app (MainActivity.onStop) tranca de novo.
+    private val _secretUnlocked = MutableStateFlow(false)
+    val secretUnlocked: StateFlow<Boolean> = _secretUnlocked
+
+    fun unlockSecret() { _secretUnlocked.value = true }
+
+    fun lockSecret() { _secretUnlocked.value = false }
+
+    suspend fun isAlbumSecret(albumId: Long): Boolean =
+        app.albumRepository.getAlbum(albumId)?.isSecret == true
 
     private val _isLoadingPhotos = MutableStateFlow(false)
     val isLoadingPhotos: StateFlow<Boolean> = _isLoadingPhotos
+
+    // Lista de fotos que o visualizador está percorrendo. Fica aqui (e não num rememberSaveable)
+    // porque salvar a biblioteca inteira no Bundle de estado da Activity estoura o limite de
+    // ~1 MB do Android (TransactionTooLargeException) em galerias grandes. O ViewModel
+    // sobrevive à recriação da Activity, que é o que importa (ex.: depois de definir o papel
+    // de parede); se o processo for morto, a tela do visualizador detecta a lista vazia e volta.
+    var viewerUris: List<String> by mutableStateOf(emptyList())
 
     private val _hasPermission = MutableStateFlow(false)
     val hasPermission: StateFlow<Boolean> = _hasPermission
@@ -175,14 +226,18 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
     val monthGroups: StateFlow<List<MonthGroup>> = combine(
-        _allPhotos, hiddenFolderNames, _showHiddenAlbums
+        allPhotos, hiddenFolderNames, _showHiddenAlbums
     ) { photos, hidden, showHidden ->
         val visible = if (showHidden) photos else photos.filter { it.bucketName !in hidden }
         groupPhotosByMonth(visible)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        // Agrupar/ordenar toda a biblioteca é trabalho pesado (dezenas de milhares de fotos):
+        // fora da thread principal pra não travar a rolagem a cada recarga da galeria.
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val deviceFolders: StateFlow<List<DeviceFolder>> = combine(
-        _allPhotos, hiddenFolderNames, safFolderNames
+        allPhotos, hiddenFolderNames, safFolderNames
     ) { photos, hidden, safNames ->
         photos.groupBy { it.bucketName }
             .filter { it.key.isNotBlank() }
@@ -195,18 +250,28 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 )
             }
             .sortedByDescending { it.lastModifiedAt }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val albumsWithStats: StateFlow<List<AlbumWithStats>> = combine(
         app.albumRepository.getAlbums(),
         app.albumRepository.getAllCrossRefs(),
-        _allPhotos
-    ) { albums, crossRefs, photos ->
+        _allPhotos,
+        secretPhotoUris
+    ) { albums, crossRefs, photos, secretUris ->
+        // Sem saber ainda o que é secreto, não mostra nenhum álbum (evita expor, por um
+        // instante, uma capa ou contagem que incluem fotos do cofre).
+        if (secretUris == null) return@combine emptyList<AlbumWithStats>()
         val photosByUri = photos.associateBy { it.uri.toString() }
         val crossByAlbum = crossRefs.groupBy { it.albumId }
         albums.map { album ->
             val refs = crossByAlbum[album.id].orEmpty().sortedByDescending { it.addedAt }
-            val uris = refs.map { it.photoUri }
+            // Uma foto que está num álbum secreto some dos álbuns comuns também; só o álbum
+            // secreto continua com ela.
+            val uris = refs.map { it.photoUri }.let { all ->
+                if (album.isSecret) all else all.filter { it !in secretUris }
+            }
             val matchedPhotos = uris.mapNotNull { photosByUri[it] }
             AlbumWithStats(
                 album = album,
@@ -217,7 +282,9 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 isHidden = album.isHidden
             )
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private fun groupPhotosByMonth(photos: List<Photo>): List<MonthGroup> =
         groupPhotosByMonthUtil(photos)
@@ -305,32 +372,57 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         registerMediaObserver()
     }
 
+    private var loadJob: Job? = null
+
     fun loadPhotos() {
-        viewModelScope.launch {
+        // Várias recargas podem ser pedidas quase juntas (observador do MediaStore, exclusão,
+        // edição...). Sem cancelar a anterior, uma leitura mais antiga e mais lenta podia
+        // terminar DEPOIS da mais nova e sobrescrever a lista com dados velhos (ex.: foto já
+        // excluída reaparecendo, ou foto recém-salva sumindo até a próxima recarga).
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _isLoadingPhotos.value = true
-            val mediaPhotos = app.mediaStoreRepository.getAllPhotos()
-            val currentSafFolders = app.settingsRepository.getSafFolders().first()
-            // Antes isso era um flatMap sequencial: cada pasta oculta só começava a ser lida
-            // depois que a anterior terminava por completo. Com várias pastas SAF cadastradas,
-            // os tempos se somavam um atrás do outro. Rodando em paralelo, o tempo total passa
-            // a ser o da pasta mais lenta, não a soma de todas.
-            val safPhotos = coroutineScope {
-                currentSafFolders
-                    .map { folder ->
-                        async { SafUtils.loadImagesFromTree(getApplication(), Uri.parse(folder.treeUri), folder.displayName) }
-                    }
-                    .awaitAll()
-                    .flatten()
+            try {
+                val mediaPhotos = app.mediaStoreRepository.getAllPhotos()
+                val currentSafFolders = app.settingsRepository.getSafFolders().first()
+                // Rodando em paralelo, o tempo total passa a ser o da pasta mais lenta, não a
+                // soma de todas.
+                val safPhotos = coroutineScope {
+                    currentSafFolders
+                        .map { folder ->
+                            async { SafUtils.loadImagesFromTree(getApplication(), Uri.parse(folder.treeUri), folder.displayName) }
+                        }
+                        .awaitAll()
+                        .flatten()
+                }
+                // distinctBy: a mesma pasta SAF cadastrada duas vezes (ou pastas que se
+                // sobrepõem) gerava itens repetidos, e itens repetidos com a mesma chave
+                // derrubam a grade (LazyGrid não aceita chaves duplicadas).
+                _allPhotos.value = withContext(Dispatchers.Default) {
+                    (mediaPhotos + safPhotos).distinctBy { it.uri }
+                }
+                _isLoadingPhotos.value = false
+                loadTrash()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Ex.: permissão revogada no meio do uso, ou falha de leitura do MediaStore.
+                // Antes isso derrubava o app; agora mantém a lista que já estava na tela.
+                android.util.Log.w("Galeria", "Falha ao carregar fotos: ${e.message}")
+                _isLoadingPhotos.value = false
             }
-            _allPhotos.value = mediaPhotos + safPhotos
-            _isLoadingPhotos.value = false
-            loadTrash()
         }
     }
 
     fun loadTrash() {
         viewModelScope.launch {
-            _trashedPhotos.value = app.mediaStoreRepository.getTrashedPhotos()
+            try {
+                _trashedPhotos.value = app.mediaStoreRepository.getTrashedPhotos()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("Galeria", "Falha ao carregar a lixeira: ${e.message}")
+            }
         }
     }
 
@@ -441,8 +533,10 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     suspend fun setSecretPassword(password: String) = app.securityRepository.setPassword(password)
 
-    suspend fun verifySecretPassword(password: String): Boolean =
+    suspend fun verifySecretPassword(password: String): UnlockResult =
         app.securityRepository.verifyPassword(password)
+
+    suspend fun secretLockRemainingMs(): Long = app.securityRepository.lockRemainingMs()
 
     // --- Limpar cache de miniaturas (Coil) ---
     //
@@ -515,6 +609,10 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             var failures = 0
             val resolver = getApplication<Application>().contentResolver
             val photosInFolder = _allPhotos.value.filter { it.bucketName == oldFolderName }
+            // A marcação de "pasta oculta" é guardada pelo NOME da pasta. Sem acompanhar a
+            // renomeação, a pasta renomeada deixava de ser oculta e seu conteúdo aparecia na
+            // linha do tempo.
+            val wasHidden = app.settingsRepository.getHiddenFolderNames().first().contains(oldFolderName)
 
             photosInFolder.forEach { photo ->
                 val newRelativePath = resolveRenamedRelativePath(photo, newFolderName)
@@ -532,6 +630,10 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                     val moved = copyToCollectionAndDeleteOriginal(resolver, photo.uri, photo, newRelativePath)
                     if (!moved) failures++
                 }
+            }
+            if (wasHidden) {
+                app.settingsRepository.hideFolder(newFolderName)
+                if (failures == 0) app.settingsRepository.unhideFolder(oldFolderName)
             }
             loadPhotos()
             failures
@@ -631,6 +733,8 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
                 put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
+                // Sem isso, a foto copiada "nascia hoje" e pulava pro topo da linha do tempo.
+                photo?.dateTakenMillis?.takeIf { it > 0L }?.let { put(MediaStore.MediaColumns.DATE_TAKEN, it) }
             }
             val newUri = resolver.insert(collection, insertValues) ?: return false
 

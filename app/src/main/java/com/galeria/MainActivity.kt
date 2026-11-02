@@ -43,6 +43,7 @@ import com.galeria.data.model.Photo
 import com.galeria.ui.GalleryViewModel
 import com.galeria.ui.navigation.GaleriaNavGraph
 import com.galeria.ui.screens.picker.ExternalPickerScreen
+import com.galeria.ui.screens.viewer.PhotoViewerScreen
 import com.galeria.ui.theme.GaleriaTheme
 
 // Representa um pedido de "me dê uma foto/vídeo" vindo de outro app (upload num site pelo
@@ -63,6 +64,23 @@ private fun resolvePickerRequest(intent: Intent?): PickerRequest? {
     return PickerRequest(mimeType = intent.type ?: "*/*", allowMultiple = allowMultiple)
 }
 
+// Pedido de "abrir esta imagem/vídeo" vindo de outro app (ACTION_VIEW), por exemplo do
+// gerenciador de arquivos. O app que pediu concede leitura só daquele URI, por isso esse caminho
+// não depende da permissão de mídia do Galeria.
+private data class ViewRequest(val uri: Uri, val isVideo: Boolean)
+
+private fun resolveViewRequest(activity: Activity): ViewRequest? {
+    val intent = activity.intent ?: return null
+    if (intent.action != Intent.ACTION_VIEW) return null
+    val uri = intent.data ?: return null
+    val mime = intent.type ?: try {
+        activity.contentResolver.getType(uri)
+    } catch (_: Exception) {
+        null
+    }
+    return ViewRequest(uri = uri, isVideo = mime?.startsWith("video/") == true)
+}
+
 class MainActivity : FragmentActivity() {
 
     private val viewModel: GalleryViewModel by viewModels()
@@ -74,6 +92,7 @@ class MainActivity : FragmentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         val pickerRequest = resolvePickerRequest(intent)
+        val viewRequest = resolveViewRequest(this)
         setContent {
             val themeMode by viewModel.themeMode.collectAsState()
             val darkTheme = when (themeMode) {
@@ -83,18 +102,41 @@ class MainActivity : FragmentActivity() {
             }
             GaleriaTheme(darkTheme = darkTheme) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    GaleriaRoot(
-                        viewModel = viewModel,
-                        pickerRequest = pickerRequest,
-                        onPickResult = { uris -> finishWithPickedUris(uris) },
-                        onPickCancel = {
-                            setResult(Activity.RESULT_CANCELED)
-                            finish()
-                        }
-                    )
+                    if (viewRequest != null) {
+                        PhotoViewerScreen(
+                            viewModel = viewModel,
+                            uris = listOf(viewRequest.uri.toString()),
+                            startIndex = 0,
+                            onBack = { finish() },
+                            onEdit = {},
+                            onAddToAlbum = {},
+                            onSetWallpaper = {},
+                            onCompressVideo = {},
+                            externalMode = true,
+                            externalIsVideo = viewRequest.isVideo
+                        )
+                    } else {
+                        GaleriaRoot(
+                            viewModel = viewModel,
+                            pickerRequest = pickerRequest,
+                            onPickResult = { uris -> finishWithPickedUris(uris) },
+                            onPickCancel = {
+                                setResult(Activity.RESULT_CANCELED)
+                                finish()
+                            }
+                        )
+                    }
                 }
             }
         }
+    }
+
+    // Sair do app (Home, trocar de app, tela bloqueada) tranca o cofre de novo. Mudança de
+    // configuração (rotação etc.) não conta: a Activity pode passar por onStop nesses casos e o
+    // usuário não saiu de fato.
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) viewModel.lockSecret()
     }
 
     // Monta o resultado no formato que quem pediu a foto espera de volta: um único URI em

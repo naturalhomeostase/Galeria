@@ -9,6 +9,12 @@ plugins {
 // reconhecer como uma atualização válida). Localmente (fora do CI), cai no valor 1.
 val ciVersionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
+// Pasta onde o Room grava o JSON do esquema do banco a cada versão (exportSchema = true).
+// Commite o conteúdo de app/schemas/ -- é a referência para escrever/testar migrações.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "com.galeria"
     compileSdk = 35

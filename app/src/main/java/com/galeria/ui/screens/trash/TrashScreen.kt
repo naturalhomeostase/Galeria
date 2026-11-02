@@ -123,7 +123,7 @@ fun TrashScreen(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                     modifier = Modifier.padding(horizontal = 2.dp)
                 ) {
-                    items(trashed, key = { it.id }) { photo ->
+                    items(trashed, key = { it.uri.toString() }) { photo ->
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Box(
                                 modifier = Modifier

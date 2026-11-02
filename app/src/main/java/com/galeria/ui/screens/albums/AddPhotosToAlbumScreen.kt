@@ -64,7 +64,7 @@ fun AddPhotosToAlbumScreen(
             verticalArrangement = Arrangement.spacedBy(2.dp),
             modifier = Modifier.padding(horizontal = 2.dp)
         ) {
-            items(allPhotos, key = { it.id }) { photo ->
+            items(allPhotos, key = { it.uri.toString() }) { photo ->
                 val uriStr = photo.uri.toString()
                 PhotoGridItem(
                     photo = photo,

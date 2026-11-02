@@ -87,20 +87,37 @@ fun ExternalPickerScreen(
     val deviceFoldersRaw by viewModel.deviceFolders.collectAsState()
     val albumsWithStatsRaw by viewModel.albumsWithStats.collectAsState()
 
-    val filteredAllPhotos = remember(allPhotos, filter) { allPhotos.filter(filter) }
+    // Nada que o app marcou como oculto/secreto pode sair pra outro app: nem pelas listas de
+    // pastas/álbuns, nem pela grade "Todas as fotos". Fotos de pastas ocultas (ou de pastas
+    // adicionadas manualmente) e fotos que estão em álbuns secretos/ocultos ficam de fora.
+    val excludedBuckets = remember(deviceFoldersRaw) {
+        deviceFoldersRaw.filter { it.isHidden || it.isSystemHidden }.map { it.name }.toSet()
+    }
+    val secretUris = remember(albumsWithStatsRaw) {
+        albumsWithStatsRaw
+            .filter { it.album.isSecret || it.isHidden }
+            .flatMapTo(HashSet<String>()) { it.photoUris }
+    }
+    val isPickable: (Photo) -> Boolean = remember(excludedBuckets, secretUris, filter) {
+        { photo: Photo ->
+            photo.bucketName !in excludedBuckets && photo.uri.toString() !in secretUris && filter(photo)
+        }
+    }
 
-    val pickerFolders = remember(deviceFoldersRaw, filter) {
+    val filteredAllPhotos = remember(allPhotos, isPickable) { allPhotos.filter(isPickable) }
+
+    val pickerFolders = remember(deviceFoldersRaw, isPickable) {
         deviceFoldersRaw
             .filter { !it.isHidden && !it.isSystemHidden }
-            .map { it to it.photos.filter(filter) }
+            .map { it to it.photos.filter(isPickable) }
             .filter { (_, photos) -> photos.isNotEmpty() }
     }
 
-    val pickerAlbums = remember(albumsWithStatsRaw, allPhotos, filter) {
+    val pickerAlbums = remember(albumsWithStatsRaw, allPhotos, isPickable) {
         val byUri = allPhotos.associateBy { it.uri.toString() }
         albumsWithStatsRaw
             .filter { !it.isHidden && !it.album.isSecret }
-            .map { stats -> stats to stats.photoUris.mapNotNull { byUri[it] }.filter(filter) }
+            .map { stats -> stats to stats.photoUris.mapNotNull { byUri[it] }.filter(isPickable) }
             .filter { (_, photos) -> photos.isNotEmpty() }
     }
 
@@ -307,7 +324,7 @@ private fun PickerPhotoGrid(
         verticalArrangement = Arrangement.spacedBy(2.dp),
         modifier = modifier.fillMaxSize().padding(horizontal = 2.dp)
     ) {
-        items(photos, key = { it.id }) { photo ->
+        items(photos, key = { it.uri.toString() }) { photo ->
             val uriStr = photo.uri.toString()
             PhotoGridItem(
                 photo = photo,

@@ -92,8 +92,11 @@ import androidx.core.view.WindowInsetsControllerCompat
 import android.view.LayoutInflater
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import android.graphics.Bitmap
 import coil.request.ImageRequest
 import me.saket.telephoto.zoomable.coil.ZoomableAsyncImage
 import me.saket.telephoto.zoomable.rememberZoomableState
@@ -117,7 +120,13 @@ fun PhotoViewerScreen(
     onEdit: (String) -> Unit,
     onAddToAlbum: (String) -> Unit,
     onSetWallpaper: (String) -> Unit,
-    onCompressVideo: (String) -> Unit
+    onCompressVideo: (String) -> Unit,
+    // Modo "abrir de fora" (ACTION_VIEW): a imagem veio de outro app e pode nem estar no
+    // MediaStore, então só dá pra ver e compartilhar -- favoritar, editar, álbum, papel de
+    // parede, info e excluir ficam ocultos. externalIsVideo existe porque, sem o item no
+    // MediaStore, não há como saber pelo ViewModel se é vídeo.
+    externalMode: Boolean = false,
+    externalIsVideo: Boolean = false
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -176,7 +185,7 @@ fun PhotoViewerScreen(
 
     val currentUri = localUris.getOrNull(pagerState.currentPage)
     val currentPhoto = currentUri?.let { viewModel.getPhotoByUri(it) }
-    val isCurrentVideo = currentPhoto?.isVideo == true
+    val isCurrentVideo = currentPhoto?.isVideo == true || (externalMode && externalIsVideo)
 
     val deleteLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
@@ -192,7 +201,7 @@ fun PhotoViewerScreen(
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             val uriStr = localUris.getOrNull(page) ?: return@HorizontalPager
             val photo = viewModel.getPhotoByUri(uriStr)
-            if (photo?.isVideo == true) {
+            if (photo?.isVideo == true || (externalMode && externalIsVideo)) {
                 VideoPage(
                     uriStr = uriStr,
                     isCurrentPage = page == pagerState.currentPage,
@@ -230,27 +239,27 @@ fun PhotoViewerScreen(
             ) {
                 val isFav = currentUri != null && favorites.contains(currentUri)
 
-                IconButton(onClick = { currentUri?.let { viewModel.toggleFavorite(it) } }) {
+                if (!externalMode) IconButton(onClick = { currentUri?.let { viewModel.toggleFavorite(it) } }) {
                     Icon(
                         imageVector = if (isFav) Icons.Filled.Star else Icons.Outlined.StarOutline,
                         contentDescription = "Favoritar",
                         tint = if (isFav) Color(0xFFFFC107) else Color.White
                     )
                 }
-                if (!isCurrentVideo) {
+                if (!isCurrentVideo && !externalMode) {
                     IconButton(onClick = { currentUri?.let(onEdit) }) {
                         Icon(Icons.Filled.Edit, contentDescription = "Editar", tint = Color.White)
                     }
                 }
-                IconButton(onClick = { currentUri?.let(onAddToAlbum) }) {
+                if (!externalMode) IconButton(onClick = { currentUri?.let(onAddToAlbum) }) {
                     Icon(Icons.Filled.PhotoAlbum, contentDescription = "Adicionar a álbum", tint = Color.White)
                 }
-                if (!isCurrentVideo) {
+                if (!isCurrentVideo && !externalMode) {
                     IconButton(onClick = { currentUri?.let(onSetWallpaper) }) {
                         Icon(Icons.Filled.Wallpaper, contentDescription = "Usar como papel de parede", tint = Color.White)
                     }
                 }
-                if (isCurrentVideo) {
+                if (isCurrentVideo && !externalMode) {
                     IconButton(onClick = { currentUri?.let(onCompressVideo) }) {
                         Icon(Icons.Filled.Compress, contentDescription = "Comprimir vídeo", tint = Color.White)
                     }
@@ -267,10 +276,10 @@ fun PhotoViewerScreen(
                 }) {
                     Icon(Icons.Filled.Share, contentDescription = "Compartilhar", tint = Color.White)
                 }
-                IconButton(onClick = { showInfo = true }) {
+                if (!externalMode) IconButton(onClick = { showInfo = true }) {
                     Icon(Icons.Filled.Info, contentDescription = "Informações", tint = Color.White)
                 }
-                IconButton(onClick = { showDeleteConfirm = true }) {
+                if (!externalMode) IconButton(onClick = { showDeleteConfirm = true }) {
                     Icon(Icons.Filled.Delete, contentDescription = "Excluir", tint = Color.White)
                 }
             }
@@ -288,7 +297,17 @@ fun PhotoViewerScreen(
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text(if (isCurrentVideo) "Excluir vídeo" else "Excluir foto") },
-            text = { Text("Este item será movido para a lixeira do sistema. Deseja continuar?") },
+            text = {
+                // A lixeira do sistema só existe no Android 11+ e só para itens do MediaStore;
+                // nos demais casos (Android antigo, pastas adicionadas manualmente) a exclusão
+                // é definitiva -- o aviso precisa dizer a verdade.
+                val goesToTrash = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                    currentUri?.let { Uri.parse(it).authority == "media" } == true
+                Text(
+                    if (goesToTrash) "Este item será movido para a lixeira do sistema. Deseja continuar?"
+                    else "Este item será excluído permanentemente e não poderá ser recuperado. Deseja continuar?"
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirm = false
@@ -335,6 +354,17 @@ private fun VideoPage(
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(Uri.parse(uriStr)))
             repeatMode = Player.REPEAT_MODE_ONE
+            // Foco de áudio: ao dar play, pausa a música/podcast de outros apps (e é pausado
+            // por uma ligação). Sem isso, o vídeo tocava POR CIMA do que já estava tocando.
+            setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build(),
+                /* handleAudioFocus = */ true
+            )
+            // Pausa sozinho se o fone for desconectado (evita o som sair de repente no alto-falante).
+            setHandleAudioBecomingNoisy(true)
             // Preparar (e portanto alocar o decodificador de hardware) só acontece no
             // LaunchedEffect(isCurrentPage) abaixo, quando a página vira a atual — não aqui.
             // Preparar todo vídeo assim que ele é composto (inclusive páginas vizinhas que o
@@ -378,6 +408,17 @@ private fun VideoPage(
                 playerToRelease.release()
             }
         }
+    }
+
+    // Ao sair do app (botão Home, trocar de app, bloquear a tela) o vídeo precisa pausar --
+    // antes o áudio continuava tocando em segundo plano até o sistema matar o processo.
+    DisposableEffect(exoPlayer) {
+        val lifecycleOwner = (context as? android.app.Activity) as? androidx.lifecycle.LifecycleOwner
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) exoPlayer.pause()
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
     }
 
     LaunchedEffect(isCurrentPage) {
@@ -571,6 +612,9 @@ private fun ZoomableImage(uriStr: String, onTap: () -> Unit) {
     ZoomableAsyncImage(
         model = ImageRequest.Builder(context)
             .data(Uri.parse(uriStr))
+            // O carregador global usa RGB_565 (bom pra miniaturas, mas causa "degraus" de cor
+            // em céus/gradientes numa foto em tela cheia). Aqui pedimos qualidade total.
+            .bitmapConfig(Bitmap.Config.ARGB_8888)
             .crossfade(200)
             .build(),
         contentDescription = null,

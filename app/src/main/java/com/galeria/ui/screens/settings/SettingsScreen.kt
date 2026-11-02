@@ -76,10 +76,20 @@ fun SettingsScreen(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
         if (uri != null) {
-            context.contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
+            // Mantém leitura E escrita: sem a escrita, excluir itens dessa pasta só funcionava
+            // até o app ser reiniciado (depois disso a exclusão falhava). Se o sistema só
+            // concedeu leitura, cai pro comportamento antigo em vez de dar erro.
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
             val displayName = uri.lastPathSegment?.substringAfterLast('/') ?: "Pasta oculta"
             viewModel.addSafFolder(uri.toString(), displayName)
         }

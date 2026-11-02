@@ -67,8 +67,50 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.galeria.util.FileUtils
 import com.galeria.util.FilterPreset
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.text.style.TextAlign
+import com.galeria.util.CropCorner
+import com.galeria.util.CropFrame
+import com.galeria.util.CropGeometry
+import com.galeria.util.ImageTransform
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+
+/**
+ * Estado do corte livre, fora do FreeCropOverlay para que os botões de cancelar/aplicar
+ * (que ficam no painel de baixo, e não por cima da imagem) consigam ler o resultado.
+ * Toda a matemática fica em CropGeometry (testada à parte).
+ */
+private class CropUiState {
+    var frame by mutableStateOf(CropGeometry.DEFAULT_FRAME)
+    var transform by mutableStateOf(ImageTransform())
+
+    fun reset() {
+        frame = CropGeometry.DEFAULT_FRAME
+        transform = ImageTransform()
+    }
+
+    fun moveFrame(dx: Float, dy: Float) { frame = CropGeometry.moveFrame(frame, dx, dy) }
+    fun dragCorner(corner: CropCorner, dx: Float, dy: Float) { frame = CropGeometry.dragCorner(frame, corner, dx, dy) }
+    fun panImage(dx: Float, dy: Float) { transform = CropGeometry.panBy(transform, dx, dy) }
+    fun zoomAndPan(focalX: Float, focalY: Float, zoom: Float, dx: Float, dy: Float) {
+        transform = CropGeometry.panBy(CropGeometry.zoomAbout(transform, focalX, focalY, zoom), dx, dy)
+    }
+
+    /** Região da imagem original (em frações 0..1) que fica dentro da moldura agora. */
+    fun imageRegion(): CropFrame = CropGeometry.toImageFractions(frame, transform)
+}
 
 private enum class EditorTab(val label: String) { AJUSTAR("Ajustar"), COR("Cor"), DESENHAR("Desenhar"), TEXTO("Texto"), COMPRIMIR("Comprimir") }
 
@@ -90,6 +132,7 @@ fun EditorScreen(
     var currentPoints by remember { mutableStateOf(listOf<Offset>()) }
     var showTextDialog by remember { mutableStateOf(false) }
     var cropMode by remember { mutableStateOf(false) }
+    val cropState = remember { CropUiState() }
 
     Scaffold(
         topBar = {
@@ -113,7 +156,7 @@ fun EditorScreen(
             if (state.loading || bmp == null) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             } else {
-                Box(
+                BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -121,108 +164,127 @@ fun EditorScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     val ratio = bmp.width.toFloat() / bmp.height.toFloat()
+                    // A imagem é ajustada para caber INTEIRA na área visível (largura e altura),
+                    // como ContentScale.Fit. Antes ela sempre ocupava a largura toda, e uma foto
+                    // alta (ex.: print de tela) passava da altura disponível: o topo e o rodapé
+                    // ficavam escondidos atrás da barra superior e das opções de baixo.
+                    val fitsByWidth = maxWidth.value / maxHeight.value.coerceAtLeast(1f) <= ratio
+                    val imageWidth = if (fitsByWidth) maxWidth else maxHeight * ratio
+                    val imageHeight = if (fitsByWidth) maxWidth / ratio else maxHeight
                     var containerWidthPx by remember { mutableStateOf(1f) }
                     var containerHeightPx by remember { mutableStateOf(1f) }
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(ratio)
+                            .size(imageWidth, imageHeight)
                             .onGloballyPositioned {
                                 containerWidthPx = it.size.width.toFloat().coerceAtLeast(1f)
                                 containerHeightPx = it.size.height.toFloat().coerceAtLeast(1f)
                             }
                     ) {
-                        val colorMatrix = remember(state.brightness, state.contrast, state.saturation, state.filter) {
-                            buildComposeColorMatrix(state.brightness, state.contrast, state.saturation, state.filter)
-                        }
-                        androidx.compose.foundation.Image(
-                            bitmap = bmp.asImageBitmap(),
-                            contentDescription = null,
-                            contentScale = ContentScale.FillBounds,
-                            colorFilter = ColorFilter.colorMatrix(colorMatrix),
-                            modifier = Modifier.fillMaxSize()
-                        )
-
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            state.strokes.forEach { s ->
-                                val path = androidx.compose.ui.graphics.Path()
-                                s.points.forEachIndexed { i, p ->
-                                    val point = Offset(p.x * size.width, p.y * size.height)
-                                    if (i == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
-                                }
-                                drawPath(
-                                    path,
-                                    color = Color(s.colorArgb),
-                                    style = Stroke(width = s.widthFraction * size.width)
-                                )
-                            }
-                            if (tab == EditorTab.DESENHAR && currentPoints.isNotEmpty()) {
-                                val path = androidx.compose.ui.graphics.Path()
-                                currentPoints.forEachIndexed { i, p ->
-                                    val point = Offset(p.x * size.width, p.y * size.height)
-                                    if (i == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
-                                }
-                                drawPath(path, color = drawColor, style = Stroke(width = strokeWidth * size.width))
-                            }
-                        }
-
-                        state.textOverlays.forEachIndexed { index, overlay ->
-                            Text(
-                                text = overlay.text,
-                                color = Color(overlay.colorArgb),
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .offsetFraction(overlay.xFraction, overlay.yFraction)
-                                    .pointerInput(index, containerWidthPx, containerHeightPx) {
-                                        detectDragGestures { change, dragAmount ->
-                                            change.consume()
-                                            val newX = (overlay.xFraction + dragAmount.x / containerWidthPx).coerceIn(0f, 1f)
-                                            val newY = (overlay.yFraction + dragAmount.y / containerHeightPx).coerceIn(0f, 1f)
-                                            viewModel.updateTextPosition(index, newX, newY)
-                                        }
-                                    }
-                            )
-                        }
-
-                        if (tab == EditorTab.DESENHAR) {
+                        // Durante o corte livre, a imagem (com traços e textos) pode receber zoom
+                        // e ser movida por baixo da moldura; fora disso a transformação é neutra.
+                        // O estado é lido dentro do graphicsLayer (e não aqui) para que a pinça
+                        // só redesenhe a camada, sem recompor a tela inteira a cada quadro.
+                        Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .pointerInput(drawColor, strokeWidth) {
-                                        detectDragGestures(
-                                            onDragStart = { offset ->
-                                                currentPoints = listOf(Offset(offset.x / size.width, offset.y / size.height))
-                                            },
-                                            onDrag = { change, _ ->
-                                                change.consume()
-                                                currentPoints = currentPoints + Offset(change.position.x / size.width, change.position.y / size.height)
-                                            },
-                                            onDragEnd = {
-                                                if (currentPoints.size > 1) {
-                                                    viewModel.addStroke(
-                                                        DrawStroke(
-                                                            colorArgb = drawColor.toArgb(),
-                                                            widthFraction = strokeWidth,
-                                                            points = currentPoints
-                                                        )
-                                                    )
-                                                }
-                                                currentPoints = emptyList()
-                                            }
+                                    .graphicsLayer {
+                                        val tr = if (cropMode) cropState.transform else ImageTransform()
+                                        transformOrigin = TransformOrigin(0f, 0f)
+                                        scaleX = tr.scale
+                                        scaleY = tr.scale
+                                        translationX = tr.tx * size.width
+                                        translationY = tr.ty * size.height
+                                    }
+                            ) {
+                                val colorMatrix = remember(state.brightness, state.contrast, state.saturation, state.filter) {
+                                    buildComposeColorMatrix(state.brightness, state.contrast, state.saturation, state.filter)
+                                }
+                                androidx.compose.foundation.Image(
+                                    bitmap = bmp.asImageBitmap(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.FillBounds,
+                                    colorFilter = ColorFilter.colorMatrix(colorMatrix),
+                                    modifier = Modifier.fillMaxSize()
+                                )
+
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    state.strokes.forEach { s ->
+                                        val path = androidx.compose.ui.graphics.Path()
+                                        s.points.forEachIndexed { i, p ->
+                                            val point = Offset(p.x * size.width, p.y * size.height)
+                                            if (i == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
+                                        }
+                                        drawPath(
+                                            path,
+                                            color = Color(s.colorArgb),
+                                            style = Stroke(width = s.widthFraction * size.width)
                                         )
                                     }
-                            )
+                                    if (tab == EditorTab.DESENHAR && currentPoints.isNotEmpty()) {
+                                        val path = androidx.compose.ui.graphics.Path()
+                                        currentPoints.forEachIndexed { i, p ->
+                                            val point = Offset(p.x * size.width, p.y * size.height)
+                                            if (i == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
+                                        }
+                                        drawPath(path, color = drawColor, style = Stroke(width = strokeWidth * size.width))
+                                    }
+                                }
+
+                                state.textOverlays.forEachIndexed { index, overlay ->
+                                    Text(
+                                        text = overlay.text,
+                                        color = Color(overlay.colorArgb),
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .align(Alignment.TopStart)
+                                            .offsetFraction(overlay.xFraction, overlay.yFraction)
+                                            .pointerInput(index, containerWidthPx, containerHeightPx) {
+                                                detectDragGestures { change, dragAmount ->
+                                                    change.consume()
+                                                    val newX = (overlay.xFraction + dragAmount.x / containerWidthPx).coerceIn(0f, 1f)
+                                                    val newY = (overlay.yFraction + dragAmount.y / containerHeightPx).coerceIn(0f, 1f)
+                                                    viewModel.updateTextPosition(index, newX, newY)
+                                                }
+                                            }
+                                    )
+                                }
+
+                                if (tab == EditorTab.DESENHAR) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .pointerInput(drawColor, strokeWidth) {
+                                                detectDragGestures(
+                                                    onDragStart = { offset ->
+                                                        currentPoints = listOf(Offset(offset.x / size.width, offset.y / size.height))
+                                                    },
+                                                    onDrag = { change, _ ->
+                                                        change.consume()
+                                                        currentPoints = currentPoints + Offset(change.position.x / size.width, change.position.y / size.height)
+                                                    },
+                                                    onDragEnd = {
+                                                        if (currentPoints.size > 1) {
+                                                            viewModel.addStroke(
+                                                                DrawStroke(
+                                                                    colorArgb = drawColor.toArgb(),
+                                                                    widthFraction = strokeWidth,
+                                                                    points = currentPoints
+                                                                )
+                                                            )
+                                                        }
+                                                        currentPoints = emptyList()
+                                                    }
+                                                )
+                                            }
+                                    )
+                                }
+                            }
                         }
 
                         if (cropMode) {
-                            FreeCropOverlay(
-                                onApply = { l, t, r, b ->
-                                    viewModel.crop(l, t, r, b)
-                                    cropMode = false
-                                },
-                                onCancel = { cropMode = false }
-                            )
+                            FreeCropOverlay(state = cropState)
                         }
                     }
                 }
@@ -233,16 +295,42 @@ fun EditorScreen(
                         .background(androidx.compose.material3.MaterialTheme.colorScheme.surface)
                 ) {
                     if (cropMode) {
-                        // Enquanto corta livremente, os botões de Aplicar/Cancelar já ficam sobre a
-                    // própria imagem (no FreeCropOverlay) — some com as abas embaixo pra não dar
-                    // a entender que dá pra trocar de ferramenta no meio do corte.
-                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                        Text(
-                            "Arraste os cantos para ajustar o corte",
-                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                        // Cancelar (X) e aplicar (check) ficam aqui, no painel de baixo, e não por
+                        // cima da imagem -- assim nunca cobrem nem ficam escondidos atrás de nada.
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = { cropMode = false }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Cancelar corte")
+                            }
+                            Text(
+                                "Arraste os cantos ou a área para ajustar. Use a pinça para dar zoom.",
+                                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                            )
+                            IconButton(
+                                onClick = {
+                                    val region = cropState.imageRegion()
+                                    viewModel.crop(region.left, region.top, region.right, region.bottom)
+                                    cropMode = false
+                                },
+                                modifier = Modifier.background(
+                                    androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                                    CircleShape
+                                )
+                            ) {
+                                Icon(
+                                    Icons.Filled.Check,
+                                    contentDescription = "Aplicar corte",
+                                    tint = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
                 } else {
                     TabRow(selectedTabIndex = tab.ordinal) {
                         EditorTab.entries.forEach { t ->
@@ -255,7 +343,10 @@ fun EditorScreen(
                             onRotate = { viewModel.rotate90() },
                             onFlip = { viewModel.flipHorizontal() },
                             onCropRatio = { ratio -> viewModel.cropToAspectRatio(ratio) },
-                            onCropFree = { cropMode = true }
+                            onCropFree = {
+                                cropState.reset()
+                                cropMode = true
+                            }
                         )
                         EditorTab.COR -> CorPanel(
                             brightness = state.brightness,
@@ -350,28 +441,69 @@ private fun AjustarPanel(onRotate: () -> Unit, onFlip: () -> Unit, onCropRatio: 
 }
 
 /**
- * Overlay de corte livre: retângulo com 4 alças nos cantos que podem ser arrastadas
- * independentemente para definir uma área de corte com qualquer proporção. Preenche o mesmo
- * Box da imagem (mesmas dimensões/posição), então as frações (0f..1f) calculadas aqui já
- * correspondem 1:1 às frações que ImageEditUtils.cropBitmap espera.
+ * Overlay de corte livre. Preenche exatamente o mesmo Box da imagem, então as frações
+ * (0f..1f) daqui correspondem 1:1 à área onde a imagem é exibida. Gestos:
+ *  - arrastar uma alça de canto: redimensiona a moldura;
+ *  - arrastar com 1 dedo começando DENTRO da moldura: move a moldura;
+ *  - arrastar com 1 dedo começando FORA da moldura: move a imagem (quando há zoom);
+ *  - pinça (2 dedos): dá zoom na imagem em torno dos dedos (e 2 dedos juntos movem a imagem).
+ * Os botões de cancelar/aplicar não ficam mais aqui: estão no painel de baixo da tela.
  */
 @Composable
-private fun FreeCropOverlay(
-    onApply: (Float, Float, Float, Float) -> Unit,
-    onCancel: () -> Unit
-) {
-    var left by remember { mutableStateOf(0.08f) }
-    var top by remember { mutableStateOf(0.08f) }
-    var right by remember { mutableStateOf(0.92f) }
-    var bottom by remember { mutableStateOf(0.92f) }
-    val minSize = 0.15f
+private fun FreeCropOverlay(state: CropUiState) {
+    val frame = state.frame
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val w = size.width.toFloat().coerceAtLeast(1f)
+                    val h = size.height.toFloat().coerceAtLeast(1f)
+                    val startFrame = state.frame
+
+                    // Toque em cima de uma alça de canto: quem trata é a própria alça.
+                    val handleRadiusPx = 28.dp.toPx()
+                    val startedOnHandle = listOf(
+                        startFrame.left to startFrame.top,
+                        startFrame.right to startFrame.top,
+                        startFrame.left to startFrame.bottom,
+                        startFrame.right to startFrame.bottom
+                    ).any { (fx, fy) ->
+                        hypot(down.position.x - fx * w, down.position.y - fy * h) <= handleRadiusPx
+                    }
+                    val startedInsideFrame = startFrame.contains(down.position.x / w, down.position.y / h)
+
+                    do {
+                        val event = awaitPointerEvent()
+                        if (!startedOnHandle && event.changes.none { it.isConsumed }) {
+                            val pressedCount = event.changes.count { it.pressed }
+                            if (pressedCount >= 2) {
+                                val zoom = event.calculateZoom()
+                                val pan = event.calculatePan()
+                                val centroid = event.calculateCentroid(useCurrent = true)
+                                state.zoomAndPan(centroid.x / w, centroid.y / h, zoom, pan.x / w, pan.y / h)
+                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            } else if (pressedCount == 1) {
+                                val pan = event.calculatePan()
+                                if (startedInsideFrame) {
+                                    state.moveFrame(pan.x / w, pan.y / h)
+                                } else {
+                                    state.panImage(pan.x / w, pan.y / h)
+                                }
+                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
+    ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val l = left * size.width
-            val t = top * size.height
-            val r = right * size.width
-            val b = bottom * size.height
+            val l = frame.left * size.width
+            val t = frame.top * size.height
+            val r = frame.right * size.width
+            val b = frame.bottom * size.height
             val dim = Color.Black.copy(alpha = 0.55f)
             drawRect(color = dim, topLeft = Offset(0f, 0f), size = androidx.compose.ui.geometry.Size(size.width, t))
             drawRect(color = dim, topLeft = Offset(0f, b), size = androidx.compose.ui.geometry.Size(size.width, size.height - b))
@@ -385,31 +517,17 @@ private fun FreeCropOverlay(
             )
         }
 
-        CropHandle(xFraction = left, yFraction = top) { dxPx, dyPx, widthPx, heightPx ->
-            left = (left + dxPx / widthPx).coerceIn(0f, right - minSize)
-            top = (top + dyPx / heightPx).coerceIn(0f, bottom - minSize)
+        CropHandle(xFraction = frame.left, yFraction = frame.top) { dxPx, dyPx, widthPx, heightPx ->
+            state.dragCorner(CropCorner.TOP_LEFT, dxPx / widthPx, dyPx / heightPx)
         }
-        CropHandle(xFraction = right, yFraction = top) { dxPx, dyPx, widthPx, heightPx ->
-            right = (right + dxPx / widthPx).coerceIn(left + minSize, 1f)
-            top = (top + dyPx / heightPx).coerceIn(0f, bottom - minSize)
+        CropHandle(xFraction = frame.right, yFraction = frame.top) { dxPx, dyPx, widthPx, heightPx ->
+            state.dragCorner(CropCorner.TOP_RIGHT, dxPx / widthPx, dyPx / heightPx)
         }
-        CropHandle(xFraction = left, yFraction = bottom) { dxPx, dyPx, widthPx, heightPx ->
-            left = (left + dxPx / widthPx).coerceIn(0f, right - minSize)
-            bottom = (bottom + dyPx / heightPx).coerceIn(top + minSize, 1f)
+        CropHandle(xFraction = frame.left, yFraction = frame.bottom) { dxPx, dyPx, widthPx, heightPx ->
+            state.dragCorner(CropCorner.BOTTOM_LEFT, dxPx / widthPx, dyPx / heightPx)
         }
-        CropHandle(xFraction = right, yFraction = bottom) { dxPx, dyPx, widthPx, heightPx ->
-            right = (right + dxPx / widthPx).coerceIn(left + minSize, 1f)
-            bottom = (bottom + dyPx / heightPx).coerceIn(top + minSize, 1f)
-        }
-
-        Row(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            TextButton(onClick = onCancel) { Text("Cancelar", color = Color.White) }
-            Button(onClick = { onApply(left, top, right, bottom) }) { Text("Aplicar corte") }
+        CropHandle(xFraction = frame.right, yFraction = frame.bottom) { dxPx, dyPx, widthPx, heightPx ->
+            state.dragCorner(CropCorner.BOTTOM_RIGHT, dxPx / widthPx, dyPx / heightPx)
         }
     }
 }

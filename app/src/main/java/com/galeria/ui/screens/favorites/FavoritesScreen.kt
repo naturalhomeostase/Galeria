@@ -111,7 +111,7 @@ fun FavoritesScreen(
                         contentPadding = PaddingValues(bottom = GaleriaBottomBarHeight + 24.dp),
                         modifier = Modifier.padding(horizontal = 2.dp)
                     ) {
-                        items(photos, key = { it.id }) { photo ->
+                        items(photos, key = { it.uri.toString() }) { photo ->
                             val uriStr = photo.uri.toString()
                             PhotoGridItem(
                                 photo = photo,

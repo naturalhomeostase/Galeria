@@ -12,6 +12,8 @@ class AlbumRepository(private val dao: AlbumDao) {
 
     fun getAllCrossRefs(): Flow<List<AlbumPhotoCrossRef>> = dao.getAllCrossRefs()
 
+    fun getSecretPhotoUris(): Flow<List<String>> = dao.getSecretPhotoUris()
+
     suspend fun getAlbum(id: Long) = dao.getAlbum(id)
 
     suspend fun createAlbum(name: String, isSecret: Boolean): Long =

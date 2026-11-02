@@ -37,6 +37,11 @@ interface AlbumDao {
     @Query("SELECT * FROM album_photos")
     fun getAllCrossRefs(): Flow<List<AlbumPhotoCrossRef>>
 
+    // Fotos de álbuns secretos (inclusive os que estão na lixeira de álbuns: mandar o álbum
+    // pra lixeira não pode ser um jeito de fazer as fotos reaparecerem na linha do tempo).
+    @Query("SELECT photoUri FROM album_photos WHERE albumId IN (SELECT id FROM albums WHERE isSecret = 1)")
+    fun getSecretPhotoUris(): Flow<List<String>>
+
     @Query("UPDATE albums SET lastModifiedAt = :timestamp WHERE id = :albumId")
     suspend fun touchAlbum(albumId: Long, timestamp: Long)
 

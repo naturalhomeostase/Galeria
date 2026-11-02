@@ -114,7 +114,7 @@ fun LargeFilesScreen(
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                         modifier = Modifier.padding(horizontal = 2.dp)
                     ) {
-                        items(sortedPhotos, key = { it.id }) { photo ->
+                        items(sortedPhotos, key = { it.uri.toString() }) { photo ->
                             val uriStr = photo.uri.toString()
                             PhotoGridItem(
                                 photo = photo,

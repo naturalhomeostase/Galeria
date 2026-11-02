@@ -6,15 +6,17 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.listSaver
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavController
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -46,6 +48,47 @@ import java.net.URLEncoder
 
 private const val TOP_TABS_ROUTE_PREFIX = ""
 
+// Rotas por onde dá pra chegar em conteúdo do cofre (o álbum secreto e o que se abre a partir
+// dele). Enquanto o cofre está destrancado, tudo o que está empilhado acima da lista de álbuns
+// pertence a essa área; ao sair dela, o cofre tranca de novo.
+private val SECRET_AREA_ROUTES = setOf(
+    "secretGate/{albumId}",
+    "album/{albumId}",
+    "addPhotos/{albumId}",
+    "viewer/{startIndex}",
+    "editor/{uri}",
+    "pickAlbum/{uri}",
+    "wallpaper/{uri}",
+    "compressVideo/{uri}"
+)
+
+private fun NavController.backToAlbums() {
+    popBackStack(GaleriaTab.ALBUNS.route, inclusive = false)
+}
+
+/**
+ * Só mostra [content] se o álbum não for secreto, ou se for e o cofre estiver destrancado.
+ * Se estiver trancado (app voltou do segundo plano, estado restaurado depois de o processo ser
+ * morto...), volta para a lista de álbuns em vez de exibir o conteúdo.
+ */
+@Composable
+private fun SecretAlbumGuard(
+    viewModel: GalleryViewModel,
+    navController: NavController,
+    albumId: Long,
+    content: @Composable () -> Unit
+) {
+    val unlocked by viewModel.secretUnlocked.collectAsState()
+    val isSecret by produceState<Boolean?>(initialValue = null, albumId) {
+        value = viewModel.isAlbumSecret(albumId)
+    }
+    when {
+        isSecret == null -> Unit
+        isSecret == true && !unlocked -> LaunchedEffect(Unit) { navController.backToAlbums() }
+        else -> content()
+    }
+}
+
 @Composable
 fun GaleriaNavGraph(viewModel: GalleryViewModel) {
     val navController = rememberNavController()
@@ -58,16 +101,31 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
 
     val bottomBarOpaque by viewModel.bottomBarOpaque.collectAsState()
     val selectionModeActive by viewModel.selectionModeActive.collectAsState()
+    val secretUnlocked by viewModel.secretUnlocked.collectAsState()
 
-    // Shared holder for the photo list currently being viewed in the pager. Usa
-    // rememberSaveable (não remember comum) porque "Definir como papel de parede" tira o app
-    // de primeiro plano por um instante em vários aparelhos (confirmação do sistema para a
-    // tela de bloqueio); se o Android reaproveita esse momento pra recompor a Activity, um
-    // remember comum perderia essa lista e o visualizador voltava sem nenhuma foto pra
-    // mostrar, exigindo sair e reabrir a foto pra "reiniciar" o estado.
-    var viewerUris by rememberSaveable(
-        stateSaver = listSaver(save = { it }, restore = { it })
-    ) { mutableStateOf(listOf<String>()) }
+    // Tranca o cofre assim que o usuário navega para fora da área dele (lista de álbuns,
+    // outras abas, ajustes...).
+    DisposableEffect(navController) {
+        val listener = NavController.OnDestinationChangedListener { _, destination, _ ->
+            if (destination.route !in SECRET_AREA_ROUTES) viewModel.lockSecret()
+        }
+        navController.addOnDestinationChangedListener(listener)
+        onDispose { navController.removeOnDestinationChangedListener(listener) }
+    }
+
+    // Quando o cofre tranca por outro motivo (o app foi pro segundo plano -- MainActivity.onStop),
+    // quem estava dentro da área do cofre é levado de volta à lista de álbuns.
+    var wasUnlocked by remember { mutableStateOf(false) }
+    LaunchedEffect(secretUnlocked) {
+        if (secretUnlocked) {
+            wasUnlocked = true
+        } else if (wasUnlocked) {
+            wasUnlocked = false
+            if (navController.currentDestination?.route in SECRET_AREA_ROUTES) {
+                navController.backToAlbums()
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         NavHost(
@@ -84,7 +142,7 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
 
             composable(GaleriaTab.FOTOS.route) {
                 HomeScreen(viewModel = viewModel) { uris, index ->
-                    viewerUris = uris
+                    viewModel.viewerUris = uris
                     navController.navigate("viewer/$index")
                 }
             }
@@ -125,7 +183,7 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                         viewModel = viewModel,
                         onBack = { navController.popBackStack() },
                         onOpenPhoto = { uris, index ->
-                            viewerUris = uris
+                            viewModel.viewerUris = uris
                             navController.navigate("viewer/$index")
                         }
                     )
@@ -133,7 +191,7 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
 
                 composable(GaleriaTab.FAVORITOS.route) {
                     FavoritesScreen(viewModel = viewModel) { uris, index ->
-                        viewerUris = uris
+                        viewModel.viewerUris = uris
                         navController.navigate("viewer/$index")
                     }
                 }
@@ -143,28 +201,27 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                     arguments = listOf(navArgument("albumId") { type = NavType.LongType })
                 ) { entry ->
                     val albumId = entry.arguments?.getLong("albumId") ?: 0L
-                    var unlocked by remember { mutableStateOf(false) }
                     var needsSetup by remember { mutableStateOf<Boolean?>(null) }
 
-                    androidx.compose.runtime.LaunchedEffect(albumId) {
+                    LaunchedEffect(albumId) {
                         needsSetup = !viewModel.hasSecretPassword()
+                    }
+
+                    // Destranca ANTES de navegar: a tela do álbum só aparece se o cofre estiver
+                    // destrancado (SecretAlbumGuard).
+                    val openAlbum = {
+                        viewModel.unlockSecret()
+                        navController.navigate("album/$albumId") {
+                            popUpTo("secretGate/$albumId") { inclusive = true }
+                        }
                     }
 
                     when {
                         needsSetup == null -> Unit
-                        needsSetup == true -> SetupSecretScreen(viewModel = viewModel) {
-                            navController.navigate("album/$albumId") {
-                                popUpTo("secretGate/$albumId") { inclusive = true }
-                            }
-                        }
-                        unlocked -> Unit
+                        needsSetup == true -> SetupSecretScreen(viewModel = viewModel) { openAlbum() }
                         else -> SecretLockScreen(
                             viewModel = viewModel,
-                            onUnlocked = {
-                                navController.navigate("album/$albumId") {
-                                    popUpTo("secretGate/$albumId") { inclusive = true }
-                                }
-                            },
+                            onUnlocked = { openAlbum() },
                             onCancel = { navController.popBackStack() }
                         )
                     }
@@ -175,16 +232,18 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                     arguments = listOf(navArgument("albumId") { type = NavType.LongType })
                 ) { entry ->
                     val albumId = entry.arguments?.getLong("albumId") ?: 0L
-                    AlbumDetailScreen(
-                        viewModel = viewModel,
-                        albumId = albumId,
-                        onBack = { navController.popBackStack() },
-                        onOpenPhoto = { uris, index ->
-                            viewerUris = uris
-                            navController.navigate("viewer/$index")
-                        },
-                        onAddPhotos = { navController.navigate("addPhotos/$albumId") }
-                    )
+                    SecretAlbumGuard(viewModel, navController, albumId) {
+                        AlbumDetailScreen(
+                            viewModel = viewModel,
+                            albumId = albumId,
+                            onBack = { navController.popBackStack() },
+                            onOpenPhoto = { uris, index ->
+                                viewModel.viewerUris = uris
+                                navController.navigate("viewer/$index")
+                            },
+                            onAddPhotos = { navController.navigate("addPhotos/$albumId") }
+                        )
+                    }
                 }
 
                 composable(
@@ -192,8 +251,10 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                     arguments = listOf(navArgument("albumId") { type = NavType.LongType })
                 ) { entry ->
                     val albumId = entry.arguments?.getLong("albumId") ?: 0L
-                    AddPhotosToAlbumScreen(viewModel = viewModel, albumId = albumId) {
-                        navController.popBackStack()
+                    SecretAlbumGuard(viewModel, navController, albumId) {
+                        AddPhotosToAlbumScreen(viewModel = viewModel, albumId = albumId) {
+                            navController.popBackStack()
+                        }
                     }
                 }
 
@@ -207,7 +268,7 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                         folderName = name,
                         onBack = { navController.popBackStack() },
                         onOpenPhoto = { uris, index ->
-                            viewerUris = uris
+                            viewModel.viewerUris = uris
                             navController.navigate("viewer/$index")
                         }
                     )
@@ -222,9 +283,29 @@ fun GaleriaNavGraph(viewModel: GalleryViewModel) {
                     arguments = listOf(navArgument("startIndex") { type = NavType.IntType })
                 ) { entry ->
                     val startIndex = entry.arguments?.getInt("startIndex") ?: 0
+                    val viewerList = viewModel.viewerUris
+                    if (viewerList.isEmpty()) {
+                        // Só acontece se o Android matou o processo e restaurou esta tela sem a
+                        // lista de fotos: em vez de mostrar um visualizador em branco, volta.
+                        LaunchedEffect(Unit) { navController.popBackStack() }
+                        return@composable
+                    }
+                    // Se a lista contém fotos de álbum secreto e o cofre está trancado (voltou
+                    // do segundo plano, ou a foto acabou de ser colocada num álbum secreto), não
+                    // mostra: volta pra lista de álbuns.
+                    val secretUris by viewModel.secretPhotoUris.collectAsState()
+                    val vaultUnlocked by viewModel.secretUnlocked.collectAsState()
+                    val hasSecretPhotos = secretUris?.let { secret -> viewerList.any { it in secret } }
+                    if (hasSecretPhotos == null) return@composable
+                    if (hasSecretPhotos && !vaultUnlocked) {
+                        // backToAlbums() é idempotente (nunca desempilha a própria lista de
+                        // álbuns), então é seguro disparar de mais de um lugar.
+                        LaunchedEffect(Unit) { navController.backToAlbums() }
+                        return@composable
+                    }
                     PhotoViewerScreen(
                         viewModel = viewModel,
-                        uris = viewerUris,
+                        uris = viewerList,
                         startIndex = startIndex,
                         onBack = { navController.popBackStack() },
                         onEdit = { uri ->

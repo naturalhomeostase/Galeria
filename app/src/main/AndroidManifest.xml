@@ -10,7 +10,7 @@
 
     <application
         android:name=".GaleriaApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
@@ -61,6 +61,21 @@
             <intent-filter>
                 <action android:name="android.intent.action.PICK" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+
+            <!--
+                Faz o Galeria aparecer em "Abrir com" quando outro app (gerenciador de arquivos,
+                e-mail, mensageiro...) pede para VER uma imagem ou vídeo. Diferente do
+                GET_CONTENT/PICK acima, aqui o Galeria não escolhe nada: só exibe o arquivo
+                recebido. content:// é o normal em Android moderno; file:// cobre apps antigos.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="image/*" />
                 <data android:mimeType="video/*" />
             </intent-filter>
         </activity>
